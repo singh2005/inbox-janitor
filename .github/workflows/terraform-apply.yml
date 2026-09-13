@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'terraform/**'
-      - 'src/**'
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
 
 permissions:
   id-token: write # Required for AWS OIDC authentication
