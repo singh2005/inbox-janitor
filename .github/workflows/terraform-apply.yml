@@ -32,6 +32,13 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: Configure GCP Credentials via OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}          
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -41,4 +48,6 @@ jobs:
         run: terraform init
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve
+        env: 
+          TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}    
+        run: terraform apply -input=false -auto-approve
