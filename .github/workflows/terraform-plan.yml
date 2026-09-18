@@ -13,6 +13,7 @@ on:
 permissions:
   id-token: write      # Grants permission to request OIDC JWT token
   contents: read
+  pull-requests: write # MANDATORY: Allows GitHub Actions to post comments on PRs
 
 jobs:
   plan:
@@ -51,6 +52,94 @@ jobs:
         run: terraform fmt -check
 
       - name: Terraform Plan
-        env: 
+        id: plan
+        env:
           TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-        run: terraform plan -input=false
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan_output.txt
+          
+      - name: Post Plan Comment on PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = './terraform/plan_output.txt';
+            let planText = '';
+
+            try {
+              planText = fs.readFileSync(path, 'utf8');
+            } catch (err) {
+              planText = 'Error reading plan output.';
+            }
+
+            // Extract summary statistics (e.g., "Plan: 2 to add, 0 to change, 0 to destroy.")
+            const summaryMatch = planText.match(/Plan:\s+(\d+)\s+to add,\s+(\d+)\s+to change,\s+(\d+)\s+to destroy/);
+            const toAdd = summaryMatch ? summaryMatch[1] : '0';
+            const toChange = summaryMatch ? summaryMatch[2] : '0';
+            const toDestroy = summaryMatch ? summaryMatch[3] : '0';
+
+            // Extract resource addresses (e.g., "aws_dynamodb_table.raw_email_logs")
+            const resourceMatches = [...planText.matchAll(/#\s+([a-zA-Z0-9_.-]+)\s+will be (created|updated in-place|destroyed)/g)];
+            
+            let resourceRows = '';
+            if (resourceMatches.length > 0) {
+              resourceRows = resourceMatches.map(m => `| \`${m[1]}\` | **${m[2].toUpperCase()}** |`).join('\n');
+            } else {
+              resourceRows = '| *No resource changes detected* | - |';
+            }
+
+            const output = `### 🚀 Terraform Plan Results
+
+            | Action | Count |
+            | :--- | :--- |
+            | 🟢 **To Add** | **${toAdd}** |
+            | 🟡 **To Change** | **${toChange}** |
+            | 🔴 **To Destroy** | **${toDestroy}** |
+
+            <details>
+            <summary><b>View Itemized Resource Changes</b></summary>
+
+            | Resource Address | Operation |
+            | :--- | :--- |
+            ${resourceRows}
+
+            </details>
+
+            <details>
+            <summary><b>View Raw Terraform Plan Execution</b></summary>
+
+            \`\`\`hcl
+            ${planText.substring(0, 60000)}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }} in commit \`${{ github.sha }}\`*`;
+
+            // Search for existing bot comment to update instead of creating duplicates
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c => c.body.includes('🚀 Terraform Plan Results'));
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: output,
+              });
+            }
