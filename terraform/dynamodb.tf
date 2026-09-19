@@ -1,5 +1,5 @@
 resource "aws_dynamodb_table" "raw_email_logs" {
-  name           = "raw_email_logs_tf"
+  name           = "inbox-janitor-raw-email-logs-tf"
   billing_mode   = "PROVISIONED"
   read_capacity  = 1
   write_capacity = 1
@@ -18,7 +18,7 @@ resource "aws_dynamodb_table" "raw_email_logs" {
 }
 
 resource "aws_dynamodb_table" "active_routing_rules" {
-  name           = "active_routing_rules_tf"
+  name           = "inbox-janitor-active-routing-rules-tf"
   billing_mode   = "PROVISIONED"
   read_capacity  = 1
   write_capacity = 1
