@@ -63,17 +63,17 @@ resource "aws_iam_policy" "allow_invoke_enforce_lambda" {
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
-  role = aws_iam_role.ingest_lambda_exec.name
+  role       = aws_iam_role.ingest_lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_iam_role_policy_attachment" "custom_attachments" {
   for_each = {
-    dynamodb = aws_iam_policy.dynamodb_access.arn
+    dynamodb        = aws_iam_policy.dynamodb_access.arn
     secrets_manager = aws_iam_policy.secrets_manager_access.arn
-    invoke_enforce = aws_iam_policy.allow_invoke_enforce_lambda.arn
+    invoke_enforce  = aws_iam_policy.allow_invoke_enforce_lambda.arn
   }
 
-  role = aws_iam_role.ingest_lambda_exec.name
+  role       = aws_iam_role.ingest_lambda_exec.name
   policy_arn = each.value
 }
