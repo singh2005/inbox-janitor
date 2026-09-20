@@ -63,9 +63,11 @@ resource "aws_iam_policy" "allow_invoke_enforce_lambda" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      Effect = "Allow"
-      Action = "lambda:InvokeFunction"
-      Resource = "arn:aws:lambda:us-east-1:*:function:inbox-janitor-enforce*" 
+      {
+        Effect = "Allow"
+        Action = "lambda:InvokeFunction"
+        Resource = "arn:aws:lambda:us-east-1:*:function:inbox-janitor-enforce*"       
+      }
     ]
   })
 }
@@ -78,7 +80,7 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 resource "aws_iam_role_policy_attachment" "custom_attachments" {
   for_each = {
     dynamodb = aws_iam_policy.dynamodb_access.arn
-    secrets_namager = aws_iam_policy.secrets_manager_access.arn
+    secrets_manager = aws_iam_policy.secrets_manager_access.arn
     invoke_enforce = aws_iam_policy.allow_invoke_enforce_lambda.arn
   }
 
