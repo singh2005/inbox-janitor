@@ -43,7 +43,7 @@ resource "aws_iam_policy" "secrets_manager_access" {
     Statement = [{
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
-      Resource = data.aws_secretsmanager_secret.gmail_credentials.arn
+      Resource = local.gmail_credentials_secret_arn
     }]
   })
 }
