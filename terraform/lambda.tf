@@ -1,8 +1,8 @@
 # 1. Download Linux ARM64 wheels directly into layer structure
 resource "terraform_data" "build_google_api_layer" {
-  triggers = {
-    requirements_hash = filemd5("${path.module}/../src/layer/requirements.txt")
-  }
+  triggers_replace = [
+    filemd5("${path.module}/../src/layer/requirements.txt")
+  ]
 
   provisioner "local-exec" {
     command = <<EOF
