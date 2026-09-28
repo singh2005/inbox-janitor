@@ -46,10 +46,10 @@ jobs:
 
       - name: Pre-build Lambda Layer
         run: |
-          mkdir -p terraform/layer_build/python/lib/python3.12/site-packages
+          mkdir -p layer_build/python/lib/python3.12/site-packages
           pip install \
             --platform manylinux2014_aarch64 \
-            --target=terraform/layer_build/python/lib/python3.12/site-packages \
+            --target=layer_build/python/lib/python3.12/site-packages \
             --implementation cp \
             --python-version 3.12 \
             --only-binary=:all: \
