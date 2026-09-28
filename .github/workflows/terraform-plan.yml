@@ -40,6 +40,22 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}          
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      - name: Pre-build Lambda Layer
+        run: |
+          mkdir -p terraform/layer_build/python/lib/python3.12/site-packages
+          pip install \
+            --platform manylinux2014_aarch64 \
+            --target=terraform/layer_build/python/lib/python3.12/site-packages \
+            --implementation cp \
+            --python-version 3.12 \
+            --only-binary=:all: \
+            -r src/layer/requirements.txt
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
