@@ -60,7 +60,7 @@ resource "aws_lambda_function" "ingest_engine" {
 
   # Attach your existing layer via the data lookup
   layers = [
-    data.aws_lambda_layer_version.google_api_layer.arn
+    aws_lambda_layer_version.google_api_layer.arn
   ]
 
   # Map environment variables to your provisioned infrastructure
