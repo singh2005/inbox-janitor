@@ -30,12 +30,12 @@ data "archive_file" "google_api_layer_zip" {
 
 # 3. Create the Lambda Layer resource in AWS
 resource "aws_lambda_layer_version" "google_api_layer" {
-  filename            = data.archive_file.google_api_layer_zip.output_path
-  source_code_hash    = data.archive_file.google_api_layer_zip.output_base64sha256
-  layer_name          = "google-api-python-layer-linux-tf"
-  compatible_runtimes = ["python3.12"]
+  filename                 = data.archive_file.google_api_layer_zip.output_path
+  source_code_hash         = data.archive_file.google_api_layer_zip.output_base64sha256
+  layer_name               = "google-api-python-layer-linux-tf"
+  compatible_runtimes      = ["python3.12"]
   compatible_architectures = ["arm64"]
-  description         = "Google API Client libraries for Python 3.12 (ARM64)"
+  description              = "Google API Client libraries for Python 3.12 (ARM64)"
 }
 
 # 4. Archive function code
@@ -47,13 +47,13 @@ data "archive_file" "ingest_lambda_zip" {
 
 # 5. Provision Ingest Lambda Function
 resource "aws_lambda_function" "ingest_engine" {
-  function_name    = "inbox-janitor-ingest-tf"
-  role             = aws_iam_role.ingest_lambda_exec.arn
-  handler          = "index.lambda_handler"
-  runtime          = "python3.12"
-  architectures    = ["arm64"]
-  timeout          = 60
-  memory_size      = 128
+  function_name = "inbox-janitor-ingest-tf"
+  role          = aws_iam_role.ingest_lambda_exec.arn
+  handler       = "index.lambda_handler"
+  runtime       = "python3.12"
+  architectures = ["arm64"]
+  timeout       = 60
+  memory_size   = 128
 
   filename         = data.archive_file.ingest_lambda_zip.output_path
   source_code_hash = data.archive_file.ingest_lambda_zip.output_base64sha256
