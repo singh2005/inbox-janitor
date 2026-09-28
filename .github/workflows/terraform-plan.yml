@@ -54,7 +54,7 @@ jobs:
             --implementation cp \
             --python-version 3.12 \
             --only-binary=:all: \
-            -r src/layer/requirements.txt
+            -r ../src/layer/requirements.txt
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
