@@ -1,5 +1,5 @@
 # 1. Download Linux ARM64 wheels directly into layer structure
-resource "null_resource" "build_google_api_layer" {
+resource "terraform_data" "build_google_api_layer" {
   triggers = {
     requirements_hash = filemd5("${path.module}/../src/layer/requirements.txt")
   }
@@ -25,7 +25,7 @@ data "archive_file" "google_api_layer_zip" {
   source_dir  = "${path.module}/layer_build"
   output_path = "${path.module}/builds/google_api_layer.zip"
 
-  depends_on = [null_resource.build_google_api_layer]
+  depends_on = [terraform_data.build_google_api_layer]
 }
 
 # 3. Create the Lambda Layer resource in AWS
