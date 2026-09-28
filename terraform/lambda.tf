@@ -1,34 +1,9 @@
-# 1. Download Linux ARM64 wheels directly into layer structure
-resource "terraform_data" "build_google_api_layer" {
-  triggers_replace = [
-    filemd5("${path.module}/../src/layer/requirements.txt")
-  ]
-
-  provisioner "local-exec" {
-    command = <<EOF
-      rm -rf ${path.module}/layer_build && \
-      mkdir -p ${path.module}/layer_build/python/lib/python3.12/site-packages && \
-      pip install \
-        --platform manylinux2014_aarch64 \
-        --target=${path.module}/layer_build/python/lib/python3.12/site-packages \
-        --implementation cp \
-        --python-version 3.12 \
-        --only-binary=:all: \
-        -r ${path.module}/../src/layer/requirements.txt
-    EOF
-  }
-}
-
-# 2. Archive the built layer directory into a zip
 data "archive_file" "google_api_layer_zip" {
   type        = "zip"
   source_dir  = "${path.module}/layer_build"
   output_path = "${path.module}/builds/google_api_layer.zip"
-
-  depends_on = [terraform_data.build_google_api_layer]
 }
 
-# 3. Create the Lambda Layer resource in AWS
 resource "aws_lambda_layer_version" "google_api_layer" {
   filename                 = data.archive_file.google_api_layer_zip.output_path
   source_code_hash         = data.archive_file.google_api_layer_zip.output_base64sha256
@@ -38,14 +13,12 @@ resource "aws_lambda_layer_version" "google_api_layer" {
   description              = "Google API Client libraries for Python 3.12 (ARM64)"
 }
 
-# 4. Archive function code
 data "archive_file" "ingest_lambda_zip" {
   type        = "zip"
   source_file = "${path.module}/../src/ingest/index.py"
   output_path = "${path.module}/builds/ingest_lambda.zip"
 }
 
-# 5. Provision Ingest Lambda Function
 resource "aws_lambda_function" "ingest_engine" {
   function_name = "inbox-janitor-ingest-tf"
   role          = aws_iam_role.ingest_lambda_exec.arn
