@@ -5,9 +5,9 @@ data "archive_file" "google_api_layer_zip" {
 }
 
 resource "aws_lambda_layer_version" "google_api_layer" {
-  filename                 = data.archive_file.google_api_layer_zip.output_path
+  filename = data.archive_file.google_api_layer_zip.output_path
   # Hash requirements.txt directly instead of the generated zip output
-  source_code_hash         = filebase64sha256("${path.module}/../src/layer/requirements.txt")  
+  source_code_hash         = filebase64sha256("${path.module}/../src/layer/requirements.txt")
   layer_name               = "google-api-python-layer-linux-tf"
   compatible_runtimes      = ["python3.12"]
   compatible_architectures = ["arm64"]
