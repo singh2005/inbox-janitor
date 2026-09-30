@@ -1,6 +1,7 @@
 import json
 import logging
 import base64
+import os
 import boto3
 from datetime import datetime
 from google.oauth2.credentials import Credentials
@@ -13,9 +14,13 @@ dynamodb = boto3.resource('dynamodb')
 secrets_client = boto3.client('secretsmanager')
 lambda_client = boto3.client('lambda')
 
-LOGS_TABLE = dynamodb.Table('raw_email_logs')
-RULES_TABLE = dynamodb.Table('active_routing_rules')
-SECRET_NAME = "InboxJanitor/GoogleServiceAccount"
+# Read table names and secret ARN dynamically from Lambda environment variables
+LOGS_TABLE_NAME = os.environ.get('LOGS_TABLE', 'inbox-janitor-raw-email-logs-tf')
+RULES_TABLE_NAME = os.environ.get('RULES_TABLE', 'inbox-janitor-active-routing-rules-tf')
+SECRET_ARN = os.environ.get('SECRET_ARN')
+
+LOGS_TABLE = dynamodb.Table(LOGS_TABLE_NAME)
+RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
 
 def register_gmail_watch(service):
     request_body = {
@@ -25,7 +30,7 @@ def register_gmail_watch(service):
     logger.info(f"Gmail Watch Registered! Expiration MS: {response.get('expiration')}")
 
 def get_google_credentials():
-    response = secrets_client.get_secret_value(SecretId=SECRET_NAME)
+    response = secrets_client.get_secret_value(SecretId=SECRET_ARN)
     secret_json = json.loads(response['SecretString'])
     scopes = ['https://www.googleapis.com/auth/gmail.modify']
     return Credentials(
