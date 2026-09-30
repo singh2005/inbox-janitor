@@ -12,12 +12,6 @@ resource "aws_apigatewayv2_stage" "default" {
   auto_deploy = true
 }
 
-resource "aws_apigatewayv2_stage" "prod" {
-  api_id      = aws_apigatewayv2_api.ingest_api.id
-  name        = "prod"
-  auto_deploy = true
-}
-
 # 3. Lambda Integration targeting inbox-janitor-ingest-tf
 resource "aws_apigatewayv2_integration" "lambda_ingest_integration" {
   api_id                 = aws_apigatewayv2_api.ingest_api.id
@@ -44,12 +38,7 @@ resource "aws_lambda_permission" "api_gw_lambda_permission" {
 }
 
 # Outputs for Pub/Sub Webhook Target
-output "api_gateway_prod_endpoint" {
-  value       = "${aws_apigatewayv2_api.ingest_api.api_endpoint}/prod/gmail-event"
-  description = "Production HTTP POST endpoint URL for GCP Pub/Sub push subscription"
-}
-
-output "api_gateway_default_endpoint" {
+output "api_gateway_endpoint" {
   value       = "${aws_apigatewayv2_api.ingest_api.api_endpoint}/gmail-event"
   description = "Public HTTP POST endpoint URL for GCP Pub/Sub push subscription"
 }
