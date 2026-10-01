@@ -19,13 +19,16 @@ LOGS_TABLE_NAME = os.environ.get('LOGS_TABLE', 'inbox-janitor-raw-email-logs-tf'
 RULES_TABLE_NAME = os.environ.get('RULES_TABLE', 'inbox-janitor-active-routing-rules-tf')
 SECRET_ARN = os.environ.get('SECRET_ARN')
 
+GCP_PUBSUB_TOPIC = os.environ.get('GCP_PUBSUB_TOPIC')
+
 LOGS_TABLE = dynamodb.Table(LOGS_TABLE_NAME)
 RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
 
 def register_gmail_watch(service):
-    request_body = {
-        'topicName': 'projects/adblocker-pihole/topics/gmail-inbox-events'
-    }
+    if not GCP_PUBSUB_TOPIC:
+        logger.error('GCP_PUBSUB_TOPIC environment variable is not set!')
+        return
+    request_body = {'topicName': GCP_PUBSUB_TOPIC}
     response = service.users().watch(userId='me', body=request_body).execute()
     logger.info(f"Gmail Watch Registered! Expiration MS: {response.get('expiration')}")
 
