@@ -20,6 +20,7 @@ RULES_TABLE_NAME = os.environ.get('RULES_TABLE', 'inbox-janitor-active-routing-r
 SECRET_ARN = os.environ.get('SECRET_ARN')
 
 GCP_PUBSUB_TOPIC = os.environ.get('GCP_PUBSUB_TOPIC')
+ENFORCE_LAMBDA_NAME = os.environ.get('ENFORCE_LAMBDA_NAME', 'inbox-janitor-enforce-tf')
 
 LOGS_TABLE = dynamodb.Table(LOGS_TABLE_NAME)
 RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
@@ -152,9 +153,9 @@ def lambda_handler(event, context):
 
     # Step 2: Hand off targeted message IDs to enforce Lambda
     if new_message_ids:
-        logger.info(f"Invoking inbox-janitor-enforce for messages: {new_message_ids}")
+        logger.info(f"Invoking {ENFORCE_LAMBDA_NAME} for messages: {new_message_ids}")
         lambda_client.invoke(
-            FunctionName='inbox-janitor-enforce',
+            FunctionName=ENFORCE_LAMBDA_NAME,
             InvocationType='Event',
             Payload=json.dumps({"message_ids": new_message_ids})
         )
