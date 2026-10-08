@@ -20,7 +20,7 @@ Inbox Janitor turns your Gmail inbox into a self-healing environment. Instead of
 ## The Event-Driven Loop: Dynamic Behavior Enforcement
 
 Inbox Janitor operates on an immediate feedback loop between Google Gmail, AWS, and your actual daily email habits.
-
+```text
 [ User Reads Email in Inbox / Trash ]
                                         │
                                         ▼
@@ -41,6 +41,8 @@ Inbox Janitor operates on an immediate feedback loop between Google Gmail, AWS, 
                                         ▼                                ▼
                               Policy: DELETE                     Policy: ALLOW
                               (Auto-trash)                      (Inbox delivery)
+
+```
 
 ### How You Control the Rules Just By Using Your Inbox
 
