@@ -11,81 +11,110 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource('dynamodb')
 secrets_client = boto3.client('secretsmanager')
 
-# Read environment variables injected by Terraform
 RULES_TABLE_NAME = os.environ.get('RULES_TABLE', 'inbox-janitor-active-routing-rules-tf')
 SECRET_ARN = os.environ.get('SECRET_ARN')
 
 RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
 
 def get_google_credentials():
-  """Fetch OAuth user credentials from Secrets Manager using Secret ARN."""
-  response = secrets_client.get_secret_value(SecretId=SECRET_ARN)
-  secret_json = json.loads(response['SecretString'])
-  scopes = ['https://www.googleapis.com/auth/gmail.modify']
+    response = secrets_client.get_secret_value(SecretId=SECRET_ARN)
+    secret_json = json.loads(response['SecretString'])
+    scopes = ['https://www.googleapis.com/auth/gmail.modify']
 
-  return Credentials(
-      token=None,
-      refresh_token=secret_json['refresh_token'],
-      client_id=secret_json['client_id'],
-      client_secret=secret_json['client_secret'],
-      token_uri='https://oauth2.googleapis.com/token',
-      scopes=scopes,
-  )
-
+    return Credentials(
+        token=None,
+        refresh_token=secret_json['refresh_token'],
+        client_id=secret_json['client_id'],
+        client_secret=secret_json['client_secret'],
+        token_uri='https://oauth2.googleapis.com/token',
+        scopes=scopes,
+    )
 
 def lambda_handler(event, context):
-  logger.info('=== Starting Inbox Janitor Enforcement Pass ===')
+    logger.info('=== Starting Inbox Janitor Enforcement Pass ===')
 
-  message_ids = event.get('message_ids', [])
-  if not message_ids:
-    logger.info('No message_ids in event payload. Exiting cleanly.')
-    return {'statusCode': 200, 'body': json.dumps('No messages to process.')}
+    # Expecting records as dicts: [{"message_id": "123", "sender_address": "user@example.com"}]
+    # Fallback support for legacy raw string lists: ["123", "456"]
+    raw_records = event.get('records', event.get('message_ids', []))
+    if not raw_records:
+        logger.info('No records in event payload. Exiting cleanly.')
+        return {'statusCode': 200, 'body': json.dumps('No messages to process.')}
 
-  creds = get_google_credentials()
-  service = build('gmail', 'v1', credentials=creds)
+    creds = get_google_credentials()
+    service = build('gmail', 'v1', credentials=creds)
 
-  trashed_count = 0
-  for msg_id in message_ids:
+    # 1. Standardize records format & extract distinct senders
+    messages_to_process = []
+    distinct_senders = set()
+
+    for item in raw_records:
+        if isinstance(item, dict):
+            messages_to_process.append(item)
+            distinct_senders.add(item['sender_address'])
+        else:
+            # Fallback for old string payload format (inspect sender manually)
+            sender = fetch_sender_from_gmail(service, item)
+            if sender:
+                messages_to_process.append({'message_id': item, 'sender_address': sender})
+                distinct_senders.add(sender)
+
+    if not messages_to_process:
+        return {'statusCode': 200, 'body': json.dumps('No valid messages parsed.')}
+
+    # 2. Batch fetch policies from DynamoDB in ONE call
+    policy_map = get_policies_for_senders(distinct_senders)
+
+    # 3. Filter messages whose active policy is 'DELETE'
+    messages_to_trash = [
+        msg['message_id']
+        for msg in messages_to_process
+        if policy_map.get(msg['sender_address'], 'ALLOW') == 'DELETE'
+    ]
+
+    # 4. Batch Trash via Gmail API in ONE call
+    trashed_count = 0
+    if messages_to_trash:
+        logger.info(f"Batch trashing {len(messages_to_trash)} message(s): {messages_to_trash}")
+        service.users().messages().batchTrash(
+            userId='me',
+            body={'ids': messages_to_trash}
+        ).execute()
+        trashed_count = len(messages_to_trash)
+
+    logger.info(f'=== Enforcement Complete. Trashed {trashed_count} messages. ===')
+    return {
+        'statusCode': 200,
+        'body': json.dumps(f'Trashed {trashed_count} messages.'),
+    }
+
+def get_policies_for_senders(senders):
+    """Batch reads active routing rules from DynamoDB for a set of sender addresses."""
+    if not senders:
+        return {}
+
+    keys = [{'sender_address': s} for s in senders]
     try:
-      # 1. Inspect message metadata to find the sender
-      detail = (
-          service.users()
-          .messages()
-          .get(userId='me', id=msg_id, format='metadata')
-          .execute()
-      )
-
-      headers = {
-          h['name']: h['value']
-          for h in detail.get('payload', {}).get('headers', [])
-      }
-      sender_full = headers.get('From', '')
-      sender = sender_full.split('<')[-1].replace('>', '').lower().strip()
-
-      # 2. Check active_routing_rules for this sender
-      rule_resp = RULES_TABLE.get_item(Key={'sender_address': sender})
-      active_policy = rule_resp.get('Item', {}).get('active_policy', 'ALLOW')
-
-      logger.info(
-          f'Message ID: {msg_id} | Sender: {sender} | Active Policy:'
-          f' {active_policy}'
-      )
-
-      # 3. Enforce policy
-      if active_policy == 'DELETE':
-        service.users().messages().trash(userId='me', id=msg_id).execute()
-        logger.info(f'Successfully trashed message {msg_id} from {sender}')
-        trashed_count += 1
-
+        response = dynamodb.batch_get_item(
+            RequestItems={
+                RULES_TABLE_NAME: {
+                    'Keys': keys,
+                    'ProjectionExpression': 'sender_address, active_policy'
+                }
+            }
+        )
+        items = response.get('Responses', {}).get(RULES_TABLE_NAME, [])
+        return {item['sender_address']: item.get('active_policy', 'ALLOW') for item in items}
     except Exception as e:
-      logger.error(
-          f'Error processing enforcement for message {msg_id}: {str(e)}'
-      )
+        logger.error(f"Error batch fetching policies: {str(e)}")
+        return {}
 
-  logger.info(
-      f'=== Enforcement Complete. Trashed {trashed_count} messages. ==='
-  )
-  return {
-      'statusCode': 200,
-      'body': json.dumps(f'Trashed {trashed_count} messages.'),
-  }
+def fetch_sender_from_gmail(service, msg_id):
+    """Fallback helper for un-migrated raw message_id strings."""
+    try:
+        detail = service.users().messages().get(userId='me', id=msg_id, format='metadata').execute()
+        headers = {h['name']: h['value'] for h in detail.get('payload', {}).get('headers', [])}
+        sender_full = headers.get('From', '')
+        return sender_full.split('<')[-1].replace('>', '').lower().strip()
+    except Exception as e:
+        logger.error(f"Error fetching sender metadata for {msg_id}: {str(e)}")
+        return None

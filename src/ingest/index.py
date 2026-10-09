@@ -101,7 +101,7 @@ def lambda_handler(event, context):
         return {'statusCode': 200, 'body': json.dumps("No historyId found; pass skipped.")}
 
     processed_senders = set()
-    new_message_ids = []
+    new_message_pairs = []  # <--- FIX: Declare dictionary pair list here
 
     # Delta Sync Pass
     last_history_id = get_last_history_id()
@@ -129,10 +129,14 @@ def lambda_handler(event, context):
             if 'messagesAdded' in record:
                 for item in record['messagesAdded']:
                     msg_id = item['message']['id']
-                    new_message_ids.append(msg_id)
                     sender = process_single_message(service, msg_id)
                     if sender:
                         processed_senders.add(sender)
+                        # FIX: Append dict pair directly when process_single_message resolves the sender
+                        new_message_pairs.append({
+                            "message_id": msg_id,
+                            "sender_address": sender
+                        })
                         
             # 2. READ / UNREAD status toggles
             for label_event in record.get('labelsRemoved', []) + record.get('labelsAdded', []):
@@ -151,13 +155,13 @@ def lambda_handler(event, context):
     if processed_senders:
         evaluate_and_update_policies(processed_senders)
 
-    # Step 2: Hand off targeted message IDs to enforce Lambda
-    if new_message_ids:
-        logger.info(f"Invoking {ENFORCE_LAMBDA_NAME} for messages: {new_message_ids}")
+    # Step 2: Hand off targeted message/sender pairs to enforce Lambda
+    if new_message_pairs:
+        logger.info(f"Invoking {ENFORCE_LAMBDA_NAME} with {len(new_message_pairs)} record(s): {new_message_pairs}")
         lambda_client.invoke(
             FunctionName=ENFORCE_LAMBDA_NAME,
             InvocationType='Event',
-            Payload=json.dumps({"message_ids": new_message_ids})
+            Payload=json.dumps({"records": new_message_pairs})
         )
 
     logger.info("=== Finished Inbox Janitor Ingest Execution Pass ===")
