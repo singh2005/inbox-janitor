@@ -33,8 +33,6 @@ def get_google_credentials():
 def lambda_handler(event, context):
     logger.info('=== Starting Inbox Janitor Enforcement Pass ===')
 
-    # Expecting records as dicts: [{"message_id": "123", "sender_address": "user@example.com"}]
-    # Fallback support for legacy raw string lists: ["123", "456"]
     raw_records = event.get('records', event.get('message_ids', []))
     if not raw_records:
         logger.info('No records in event payload. Exiting cleanly.')
@@ -52,7 +50,6 @@ def lambda_handler(event, context):
             messages_to_process.append(item)
             distinct_senders.add(item['sender_address'])
         else:
-            # Fallback for old string payload format (inspect sender manually)
             sender = fetch_sender_from_gmail(service, item)
             if sender:
                 messages_to_process.append({'message_id': item, 'sender_address': sender})
@@ -71,15 +68,23 @@ def lambda_handler(event, context):
         if policy_map.get(msg['sender_address'], 'ALLOW') == 'DELETE'
     ]
 
-    # 4. Batch Trash via Gmail API in ONE call
+    # 4. Execute Batch HTTP Request via Google Client Library
     trashed_count = 0
     if messages_to_trash:
         logger.info(f"Batch trashing {len(messages_to_trash)} message(s): {messages_to_trash}")
-        service.users().messages().batchTrash(
-            userId='me',
-            body={'ids': messages_to_trash}
-        ).execute()
-        trashed_count = len(messages_to_trash)
+        
+        def trash_callback(request_id, response, exception):
+            nonlocal trashed_count
+            if exception is not None:
+                logger.error(f"Error trashing message in batch request: {exception}")
+            else:
+                trashed_count += 1
+
+        batch = service.new_batch_http_request(callback=trash_callback)
+        for msg_id in messages_to_trash:
+            batch.add(service.users().messages().trash(userId='me', id=msg_id))
+        
+        batch.execute()
 
     logger.info(f'=== Enforcement Complete. Trashed {trashed_count} messages. ===')
     return {
@@ -88,7 +93,6 @@ def lambda_handler(event, context):
     }
 
 def get_policies_for_senders(senders):
-    """Batch reads active routing rules from DynamoDB for a set of sender addresses."""
     if not senders:
         return {}
 
@@ -109,7 +113,6 @@ def get_policies_for_senders(senders):
         return {}
 
 def fetch_sender_from_gmail(service, msg_id):
-    """Fallback helper for un-migrated raw message_id strings."""
     try:
         detail = service.users().messages().get(userId='me', id=msg_id, format='metadata').execute()
         headers = {h['name']: h['value'] for h in detail.get('payload', {}).get('headers', [])}
