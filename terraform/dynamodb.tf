@@ -24,7 +24,7 @@ resource "aws_dynamodb_table" "active_routing_rules" {
   write_capacity = 1
   hash_key       = "sender_address"
 
- # Primary Partition Key
+  # Primary Partition Key
   attribute {
     name = "sender_address"
     type = "S"
