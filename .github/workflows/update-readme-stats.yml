@@ -1,0 +1,80 @@
+name: Update Inbox Janitor README Stats
+
+on:
+  schedule:
+    # Runs every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+permissions:
+  id-token: write # Mandatory for requesting the OIDC JWT token
+  contents: read
+
+jobs:
+  update-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: pip install boto3
+
+      - name: Query GSI & Generate Badge JSON
+        run: |
+          python - << 'EOF'
+          import os
+          import json
+          import boto3
+
+          dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+          rules_table = dynamodb.Table('inbox-janitor-active-routing-rules-tf')
+
+          # 1. Fetch Global Total ($O(1) GetItem)
+          resp_global = rules_table.get_item(Key={'sender_address': '__GLOBAL_METRICS__'})
+          total_trashed = resp_global.get('Item', {}).get('total_trashed', 0)
+
+          # 2. Fetch Top Senders ($O(1) GSI Query)
+          gsi_resp = rules_table.query(
+              IndexName='TopTrashedSendersIndex',
+              KeyConditionExpression='entity_type = :et',
+              ExpressionAttributeValues={':et': 'RULE'},
+              ScanIndexForward=False,
+              Limit=5
+          )
+          top_senders = gsi_resp.get('Items', [])
+
+          # 3. Format Shields.io Endpoint JSON
+          badge_data = {
+              "schemaVersion": 1,
+              "label": "Emails Trashed",
+              "message": str(total_trashed),
+              "color": "blue"
+          }
+
+          with open('total_badge.json', 'w') as f:
+              json.dump(badge_data, f)
+
+          print(f"Total Trashed: {total_trashed}")
+          print("Top Senders in Index:")
+          for s in top_senders:
+              print(f" - {s['sender_address']}: {s.get('trashed_count', 0)}")
+          EOF
+
+      - name: Push Badge to Gist
+        uses: exalen/gist-builder-action@v1
+        with:
+          gist_id: ${{ secrets.STATS_GIST_ID }}
+          gh_token: ${{ secrets.GIST_PAT }}
+          files: '{"total_badge.json": "total_badge.json"}'
