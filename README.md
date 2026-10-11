@@ -6,7 +6,11 @@ An event-driven, cloud-native inbox management engine that automatically identif
 
 ## 📊 Pipeline Impact Statistics
 
-![Emails Trashed](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/total_badge.json)
+![Emails Trashed](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/YOUR_USERNAME/YOUR_GIST_ID/raw/total_badge.json)
+
+### 🏆 Top Trashed Senders
+<!-- TOP_SENDERS_START -->
+<!-- TOP_SENDERS_END -->
 
 ## What Inbox Janitor Offers
 
