@@ -34,8 +34,9 @@ jobs:
       - name: Query GSI & Generate Badge JSON
         run: |
           python - << 'EOF'
-          import os
           import json
+          import os
+          import re
           import boto3
 
           dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -51,25 +52,47 @@ jobs:
               KeyConditionExpression='entity_type = :et',
               ExpressionAttributeValues={':et': 'RULE'},
               ScanIndexForward=False,
-              Limit=5
+              Limit=5,
           )
           top_senders = gsi_resp.get('Items', [])
 
           # 3. Format Shields.io Endpoint JSON
           badge_data = {
-              "schemaVersion": 1,
-              "label": "Emails Trashed",
-              "message": str(total_trashed),
-              "color": "blue"
+              'schemaVersion': 1,
+              'label': 'Emails Trashed',
+              'message': str(total_trashed),
+              'color': 'blue',
           }
 
           with open('total_badge.json', 'w') as f:
-              json.dump(badge_data, f)
+            json.dump(badge_data, f)
 
-          print(f"Total Trashed: {total_trashed}")
-          print("Top Senders in Index:")
-          for s in top_senders:
-              print(f" - {s['sender_address']}: {s.get('trashed_count', 0)}")
+          # 4. Generate Top 5 Markdown Table
+          table_lines = [
+              '| Rank | Sender Address | Trashed Count |',
+              '| :--- | :--- | :--- |',
+          ]
+          for idx, item in enumerate(top_senders, 1):
+            sender = item.get('sender_address', 'unknown')
+            count = item.get('trashed_count', 0)
+            table_lines.append(f'| {idx} | `{sender}` | {count} |')
+
+          table_md = '\n'.join(table_lines)
+
+          # 5. Inject dynamic table into README between markers
+          with open('README.md', 'r') as f:
+            readme_content = f.read()
+
+          marker_pattern = r'(<!-- TOP_SENDERS_START -->)(.*?)(<!-- TOP_SENDERS_END -->)'
+          updated_readme = re.sub(
+              marker_pattern,
+              f'\\1\n{table_md}\n\\3',
+              readme_content,
+              flags=re.DOTALL,
+          )
+
+          with open('README.md', 'w') as f:
+            f.write(updated_readme)
           EOF
 
       - name: Push Badge to Gist via GitHub API
