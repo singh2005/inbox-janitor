@@ -1,4 +1,4 @@
-name: Update Inbox Janitor README Stats
+name: Update Inbox Janitor Stats
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
 
 permissions:
   id-token: write # Mandatory for OIDC token request
-  contents: read
+  contents: write # Mandatory to commit updated STATS.md back to repo
 
 jobs:
   update-stats:
@@ -31,11 +31,12 @@ jobs:
       - name: Install Dependencies
         run: pip install boto3
 
-      - name: Query GSI & Generate Gist JSON Files
+      - name: Query GSI & Update Local Files
         run: |
           python - << 'EOF'
           import json
           import os
+          import re
           import boto3
 
           dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -51,37 +52,63 @@ jobs:
               KeyConditionExpression='entity_type = :et',
               ExpressionAttributeValues={':et': 'RULE'},
               ScanIndexForward=False,
-              Limit=5
+              Limit=5,
           )
           top_senders = gsi_resp.get('Items', [])
 
           # 3. Format Shields.io Total Badge JSON
           badge_data = {
-              "schemaVersion": 1,
-              "label": "Emails Trashed",
-              "message": str(total_trashed),
-              "color": "blue"
+              'schemaVersion': 1,
+              'label': 'Emails Trashed',
+              'message': str(total_trashed),
+              'color': 'blue',
           }
           with open('total_badge.json', 'w') as f:
-              json.dump(badge_data, f)
+            json.dump(badge_data, f)
 
-          # 4. Format Top 5 Senders JSON Table
+          # 4. Format Top 5 Senders JSON for Gist
           top_senders_table = []
           for idx, item in enumerate(top_senders, 1):
-              top_senders_table.append({
-                  "rank": idx,
-                  "sender_address": item.get('sender_address', 'unknown'),
-                  "trashed_count": int(item.get('trashed_count', 0))
-              })
-
+            top_senders_table.append({
+                'rank': idx,
+                'sender_address': item.get('sender_address', 'unknown'),
+                'trashed_count': int(item.get('trashed_count', 0)),
+            })
           with open('top_senders.json', 'w') as f:
-              json.dump(top_senders_table, f, indent=2)
+            json.dump(top_senders_table, f, indent=2)
 
-          print(f"Total Trashed: {total_trashed}")
-          print("Generated top_senders.json with", len(top_senders_table), "entries")
+          # 5. Generate Markdown Table for STATS.md
+          table_lines = [
+              '| Rank | Sender Address | Trashed Count |',
+              '| :--- | :--- | :--- |',
+          ]
+          for idx, item in enumerate(top_senders, 1):
+            sender = item.get('sender_address', 'unknown')
+            count = int(item.get('trashed_count', 0))
+            table_lines.append(f'| {idx} | `{sender}` | {count} |')
+
+          table_md = '\n'.join(table_lines)
+
+          # 6. Inject Markdown Table between comment markers in STATS.md
+          if os.path.exists('STATS.md'):
+            with open('STATS.md', 'r') as f:
+              stats_content = f.read()
+
+            marker_pattern = (
+                r'(<!-- TOP_SENDERS_START -->)(.*?)(<!-- TOP_SENDERS_END -->)'
+            )
+            updated_stats = re.sub(
+                marker_pattern,
+                f'\\1\n{table_md}\n\\3',
+                stats_content,
+                flags=re.DOTALL,
+            )
+
+            with open('STATS.md', 'w') as f:
+              f.write(updated_stats)
           EOF
 
-      - name: Push Both JSON Files to Gist via GitHub API
+      - name: Push JSON Files to Gist via GitHub API
         env:
           GIST_PAT: ${{ secrets.GIST_PAT }}
           GIST_ID: ${{ secrets.STATS_GIST_ID }}
@@ -100,3 +127,11 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/gists/$GIST_ID \
             -d "$PAYLOAD"
+
+      - name: Commit & Push Updated STATS.md
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add STATS.md
+          git diff --staged --quiet || git commit -m "auto: update STATS.md top senders table [skip ci]"
+          git push
