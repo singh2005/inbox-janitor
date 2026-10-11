@@ -30,6 +30,43 @@ def get_google_credentials():
         scopes=scopes,
     )
 
+def increment_trashed_counts(trashed_senders_map):
+    """
+    Atomics updates sender deletion stats (for GSI sorting) 
+    and global pipeline deletion stats in active_routing_rules.
+    """
+    total_trashed_in_pass = sum(trashed_senders_map.values())
+    if total_trashed_in_pass <= 0:
+        return
+
+    # 1. Update Global Metrics Counter (__GLOBAL_METRICS__)
+    try:
+        RULES_TABLE.update_item(
+            Key={'sender_address': '__GLOBAL_METRICS__'},
+            UpdateExpression='ADD total_trashed :val',
+            ExpressionAttributeValues={':val': total_trashed_in_pass}
+        )
+        logger.info(f"Updated __GLOBAL_METRICS__ by +{total_trashed_in_pass}")
+    except Exception as e:
+        logger.error(f"Failed updating __GLOBAL_METRICS__: {str(e)}")
+
+    # 2. Update Per-Sender Counts & GSI Partition Key (entity_type = 'RULE')
+    for sender, count in trashed_senders_map.items():
+        if count <= 0:
+            continue
+        try:
+            RULES_TABLE.update_item(
+                Key={'sender_address': sender},
+                UpdateExpression='SET entity_type = :et ADD trashed_count :val',
+                ExpressionAttributeValues={
+                    ':et': 'RULE',
+                    ':val': count
+                }
+            )
+            logger.info(f"Updated {sender}: trashed_count +{count}, entity_type=RULE")
+        except Exception as e:
+            logger.error(f"Failed updating stats for {sender}: {str(e)}")
+
 def lambda_handler(event, context):
     logger.info('=== Starting Inbox Janitor Enforcement Pass ===')
 
@@ -61,30 +98,42 @@ def lambda_handler(event, context):
     # 2. Batch fetch policies from DynamoDB in ONE call
     policy_map = get_policies_for_senders(distinct_senders)
 
-    # 3. Filter messages whose active policy is 'DELETE'
+    # 3. Filter messages whose active policy is 'DELETE' (keep full dict objects)
     messages_to_trash = [
-        msg['message_id']
+        msg
         for msg in messages_to_process
         if policy_map.get(msg['sender_address'], 'ALLOW') == 'DELETE'
     ]
 
     # 4. Execute Batch HTTP Request via Google Client Library
     trashed_count = 0
+    trashed_senders_map = {}
+
     if messages_to_trash:
-        logger.info(f"Batch trashing {len(messages_to_trash)} message(s): {messages_to_trash}")
-        
+        logger.info(f"Batch trashing {len(messages_to_trash)} message(s)")
+
         def trash_callback(request_id, response, exception):
             nonlocal trashed_count
             if exception is not None:
-                logger.error(f"Error trashing message in batch request: {exception}")
+                logger.error(f"Error trashing message {request_id} in batch: {exception}")
             else:
                 trashed_count += 1
+                sender = next((m['sender_address'] for m in messages_to_trash if m['message_id'] == request_id), 'unknown')
+                trashed_senders_map[sender] = trashed_senders_map.get(sender, 0) + 1
 
         batch = service.new_batch_http_request(callback=trash_callback)
-        for msg_id in messages_to_trash:
-            batch.add(service.users().messages().trash(userId='me', id=msg_id))
-        
+        for msg in messages_to_trash:
+            # Explicit request_id enables matching response back to sender_address
+            batch.add(
+                service.users().messages().trash(userId='me', id=msg['message_id']),
+                request_id=msg['message_id']
+            )
+
         batch.execute()
+
+        # 5. Atomic writes to DynamoDB for GSI sorting and Global totals
+        if trashed_senders_map:
+            increment_trashed_counts(trashed_senders_map)
 
     logger.info(f'=== Enforcement Complete. Trashed {trashed_count} messages. ===')
     return {
