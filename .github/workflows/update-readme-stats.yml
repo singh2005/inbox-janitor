@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 permissions:
-  id-token: write # Mandatory for requesting the OIDC JWT token
+  id-token: write # Mandatory for OIDC token request
   contents: read
 
 jobs:
@@ -72,9 +72,21 @@ jobs:
               print(f" - {s['sender_address']}: {s.get('trashed_count', 0)}")
           EOF
 
-      - name: Push Badge to Gist
-        uses: exalen/gist-builder-action@v1
-        with:
-          gist_id: ${{ secrets.STATS_GIST_ID }}
-          gh_token: ${{ secrets.GIST_PAT }}
-          files: '{"total_badge.json": "total_badge.json"}'
+      - name: Push Badge to Gist via GitHub API
+        env:
+          GIST_PAT: ${{ secrets.GIST_PAT }}
+          GIST_ID: ${{ secrets.STATS_GIST_ID }}
+        run: |
+          # Read raw JSON content from python step
+          BADGE_CONTENT=$(cat total_badge.json)
+          
+          # Construct JSON payload for GitHub Gist PATCH API
+          PAYLOAD=$(jq -n --arg content "$BADGE_CONTENT" '{files: {"total_badge.json": {content: $content}}}')
+
+          # Send PATCH request directly to GitHub REST API
+          curl -s -X PATCH \
+            -H "Authorization: Bearer $GIST_PAT" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/gists/$GIST_ID \
+            -d "$PAYLOAD"
