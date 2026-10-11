@@ -4,6 +4,10 @@ An event-driven, cloud-native inbox management engine that automatically identif
 
 ---
 
+## 📊 Pipeline Impact Statistics
+
+![Emails Trashed](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/total_badge.json)
+
 ## What Inbox Janitor Offers
 
 Inbox Janitor turns your Gmail inbox into a self-healing environment. Instead of forcing you to build and update static email filters, it acts as an intelligent supervisor that monitors sender habits, calculates engagement streaks, and enforces automated cleanup policies dynamically.
