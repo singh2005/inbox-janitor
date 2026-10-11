@@ -29,7 +29,8 @@ resource "aws_iam_policy" "dynamodb_access" {
       ]
       Resource = [
         aws_dynamodb_table.raw_email_logs.arn,
-        aws_dynamodb_table.active_routing_rules.arn
+        aws_dynamodb_table.active_routing_rules.arn,
+        "${aws_dynamodb_table.active_routing_rules.arn}/index/TopTrashedSendersIndex"
       ]
     }]
   })

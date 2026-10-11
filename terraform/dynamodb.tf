@@ -24,8 +24,30 @@ resource "aws_dynamodb_table" "active_routing_rules" {
   write_capacity = 1
   hash_key       = "sender_address"
 
+ # Primary Partition Key
   attribute {
     name = "sender_address"
     type = "S"
+  }
+
+  # GSI Partition Key
+  attribute {
+    name = "entity_type"
+    type = "S"
+  }
+
+  # GSI Sort Key
+  attribute {
+    name = "trashed_count"
+    type = "N"
+  }
+
+  global_secondary_index {
+    name            = "TopTrashedSendersIndex"
+    hash_key        = "entity_type"
+    range_key       = "trashed_count"
+    projection_type = "ALL"
+    read_capacity   = 1
+    write_capacity  = 1
   }
 }
