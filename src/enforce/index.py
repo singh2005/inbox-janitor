@@ -31,10 +31,6 @@ def get_google_credentials():
     )
 
 def increment_trashed_counts(trashed_senders_map):
-    """
-    Atomics updates sender deletion stats (for GSI sorting) 
-    and global pipeline deletion stats in active_routing_rules.
-    """
     total_trashed_in_pass = sum(trashed_senders_map.values())
     if total_trashed_in_pass <= 0:
         return
@@ -44,11 +40,11 @@ def increment_trashed_counts(trashed_senders_map):
         RULES_TABLE.update_item(
             Key={'sender_address': '__GLOBAL_METRICS__'},
             UpdateExpression='ADD total_trashed :val',
-            ExpressionAttributeValues={':val': total_trashed_in_pass}
+            ExpressionAttributeValues={':val': total_trashed_in_pass},
         )
-        logger.info(f"Updated __GLOBAL_METRICS__ by +{total_trashed_in_pass}")
+        logger.info(f'Updated __GLOBAL_METRICS__ by +{total_trashed_in_pass}')
     except Exception as e:
-        logger.error(f"Failed updating __GLOBAL_METRICS__: {str(e)}")
+        logger.error(f'Failed updating __GLOBAL_METRICS__: {str(e)}')
 
     # 2. Update Per-Sender Counts & GSI Partition Key (entity_type = 'RULE')
     for sender, count in trashed_senders_map.items():
@@ -57,15 +53,16 @@ def increment_trashed_counts(trashed_senders_map):
         try:
             RULES_TABLE.update_item(
                 Key={'sender_address': sender},
-                UpdateExpression='SET entity_type = :et ADD trashed_count :val',
-                ExpressionAttributeValues={
-                    ':et': 'RULE',
-                    ':val': count
-                }
+                UpdateExpression=(
+                    'SET entity_type = :et ADD trashed_count :val'
+                ),
+                ExpressionAttributeValues={':et': 'RULE', ':val': count},
             )
-            logger.info(f"Updated {sender}: trashed_count +{count}, entity_type=RULE")
-        except Exception as e:
-            logger.error(f"Failed updating stats for {sender}: {str(e)}")
+            logger.info(
+                f'Updated {sender}: trashed_count +{count}, entity_type=RULE'
+            )
+            except Exception as e:
+                logger.error(f'Failed updating stats for {sender}: {str(e)}')
 
 def lambda_handler(event, context):
     logger.info('=== Starting Inbox Janitor Enforcement Pass ===')
