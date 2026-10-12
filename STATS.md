@@ -3,11 +3,11 @@
 <!-- TOP_SENDERS_START -->
 | Rank | Sender Address | Trashed Count |
 | :--- | :--- | :--- |
-| 1 | `no-reply@dudeperfect.store` | 1 |
-| 2 | `superintelligencenews@substack.com` | 1 |
-| 3 | `southwestairlines@iluv.southwest.com` | 1 |
-| 4 | `notifications@github.com` | 1 |
-| 5 | `newsletter@sleepfoundation.org` | 1 |
+| 1 | `gap@email.gap.com` | 1 |
+| 2 | `flyers@webstaurantstore.com` | 1 |
+| 3 | `no-reply@dudeperfect.store` | 1 |
+| 4 | `superintelligencenews@substack.com` | 1 |
+| 5 | `southwestairlines@iluv.southwest.com` | 1 |
 <!-- TOP_SENDERS_END -->
 
 ---
