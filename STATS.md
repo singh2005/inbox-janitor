@@ -3,11 +3,11 @@
 <!-- TOP_SENDERS_START -->
 | Rank | Sender Address | Trashed Count |
 | :--- | :--- | :--- |
-| 1 | `gap@email.gap.com` | 1 |
-| 2 | `flyers@webstaurantstore.com` | 1 |
-| 3 | `no-reply@dudeperfect.store` | 1 |
-| 4 | `superintelligencenews@substack.com` | 1 |
-| 5 | `southwestairlines@iluv.southwest.com` | 1 |
+| 1 | `hey@happytiles.com` | 3 |
+| 2 | `dsw@e.dsw.com` | 2 |
+| 3 | `newsletter@newsbreakpost.com` | 2 |
+| 4 | `no-reply@e.udemymail.com` | 2 |
+| 5 | `email@sunandski.com` | 2 |
 <!-- TOP_SENDERS_END -->
 
 ---
