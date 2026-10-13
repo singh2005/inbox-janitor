@@ -3,11 +3,11 @@
 <!-- TOP_SENDERS_START -->
 | Rank | Sender Address | Trashed Count |
 | :--- | :--- | :--- |
-| 1 | `hey@happytiles.com` | 3 |
-| 2 | `dsw@e.dsw.com` | 2 |
-| 3 | `newsletter@newsbreakpost.com` | 2 |
-| 4 | `no-reply@e.udemymail.com` | 2 |
-| 5 | `email@sunandski.com` | 2 |
+| 1 | `bestbuy@email.bestbuy.com` | 3 |
+| 2 | `dsw@e.dsw.com` | 3 |
+| 3 | `newsletter@newsbreakpost.com` | 3 |
+| 4 | `hey@happytiles.com` | 3 |
+| 5 | `gap@email.gap.com` | 2 |
 <!-- TOP_SENDERS_END -->
 
 ---
