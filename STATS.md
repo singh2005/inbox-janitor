@@ -5,9 +5,9 @@
 | :--- | :--- | :--- |
 | 1 | `dsw@e.dsw.com` | 6 |
 | 2 | `newsletter@newsbreakpost.com` | 6 |
-| 3 | `lenovo@ecomm.lenovo.com` | 5 |
-| 4 | `bestbuy@email.bestbuy.com` | 4 |
-| 5 | `gap@email.gap.com` | 4 |
+| 3 | `no-reply@e.udemymail.com` | 6 |
+| 4 | `gap@email.gap.com` | 5 |
+| 5 | `lenovo@ecomm.lenovo.com` | 5 |
 <!-- TOP_SENDERS_END -->
 
 ---
