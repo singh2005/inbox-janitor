@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inbox Janitor — Automated Deterministic Email Cleanup</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #24292e; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+    h1 { border-bottom: 2px solid #e1e4e8; padding-bottom: 10px; }
+    h2 { margin-top: 30px; border-bottom: 1px solid #e1e4e8; padding-bottom: 5px; }
+    code { background: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+    .footer { margin-top: 50px; font-size: 0.85em; color: #586069; border-top: 1px solid #e1e4e8; padding-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Inbox Janitor</h1>
+  <p><strong>Inbox Janitor</strong> is a serverless, event-driven personal automation tool built on AWS and Google Cloud that deterministically cleans your email inbox based on user engagement telemetry.</p>
+
+  <h2>Architecture & Operation</h2>
+  <ul>
+    <li><strong>Event-Driven Ingestion:</strong> Connects to GCP Pub/Sub webhooks triggered by Gmail push notifications.</li>
+    <li><strong>Deterministic Logic:</strong> Evaluates a 6-message sliding window in DynamoDB. If 6 consecutive messages from a sender remain unread, the sender's policy switches from <code>ALLOW</code> to <code>DELETE</code>.</li>
+    <li><strong>Self-Healing:</strong> Automatically reverts to <code>ALLOW</code> if a user manually reads or restores a trashed email.</li>
+  </ul>
+
+  <h2 id="privacy">Privacy Policy</h2>
+  <p>Inbox Janitor is a private, single-user open-source utility built solely for personal email organization.</p>
+  <ul>
+    <li><strong>Data Access:</strong> Uses the <code>https://www.googleapis.com/auth/gmail.modify</code> scope to inspect unread message metadata and move engagement-matched messages to Gmail Trash.</li>
+    <li><strong>Data Storage:</strong> No email body contents, attachments, or personal messages are ever stored. Only message IDs and sender email addresses are stored in encrypted AWS DynamoDB tables.</li>
+    <li><strong>Data Sharing:</strong> No data is collected, sold, transmitted, or shared with third parties.</li>
+  </ul>
+
+  <h2 id="terms">Terms of Service</h2>
+  <p>This software is provided "as is", without warranty of any kind. It runs as an isolated serverless application owned and operated by the individual deployment owner.</p>
+
+  <div class="footer">
+    <p>Inbox Janitor Open Source Project | Managed via GitHub Actions & Terraform</p>
+  </div>
+</body>
+</html>
