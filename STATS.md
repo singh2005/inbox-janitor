@@ -5,9 +5,9 @@
 | :--- | :--- | :--- |
 | 1 | `hello@newsbreakexpress.com` | 17 |
 | 2 | `no-reply@rs.email.nextdoor.com` | 17 |
-| 3 | `dsw@e.dsw.com` | 13 |
+| 3 | `dsw@e.dsw.com` | 14 |
 | 4 | `email@eddiebauer.com` | 11 |
-| 5 | `noresponse_at_email_interactivebrokers_com_s8r911d9rzkb8f_96hx4545@icloud.com` | 10 |
+| 5 | `noresponse_at_email_interactivebrokers_com_s8r911d9rzkb8f_96hx4545@icloud.com` | 11 |
 <!-- TOP_SENDERS_END -->
 
 ---
