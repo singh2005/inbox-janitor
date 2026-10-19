@@ -40,11 +40,11 @@ resource "aws_lambda_function" "ingest_engine" {
   # Map environment variables to your provisioned infrastructure
   environment {
     variables = {
-      LOGS_TABLE          = aws_dynamodb_table.raw_email_logs.name
-      RULES_TABLE         = aws_dynamodb_table.active_routing_rules.name
-      SECRET_ARN          = local.gmail_credentials_secret_arn
-      GCP_PUBSUB_TOPIC    = google_pubsub_topic.gmail_push_topic.id
-      ENFORCE_QUEUE_URL   = aws_sqs_queue.enforce_queue.url
+      LOGS_TABLE        = aws_dynamodb_table.raw_email_logs.name
+      RULES_TABLE       = aws_dynamodb_table.active_routing_rules.name
+      SECRET_ARN        = local.gmail_credentials_secret_arn
+      GCP_PUBSUB_TOPIC  = google_pubsub_topic.gmail_push_topic.id
+      ENFORCE_QUEUE_URL = aws_sqs_queue.enforce_queue.url
     }
   }
 
