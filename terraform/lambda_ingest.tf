@@ -44,7 +44,6 @@ resource "aws_lambda_function" "ingest_engine" {
       RULES_TABLE         = aws_dynamodb_table.active_routing_rules.name
       SECRET_ARN          = local.gmail_credentials_secret_arn
       GCP_PUBSUB_TOPIC    = google_pubsub_topic.gmail_push_topic.id
-      ENFORCE_LAMBDA_NAME = aws_lambda_function.enforce_engine.function_name
       ENFORCE_QUEUE_URL   = aws_sqs_queue.enforce_queue.url
     }
   }
@@ -53,6 +52,7 @@ resource "aws_lambda_function" "ingest_engine" {
   depends_on = [
     aws_iam_role_policy_attachment.custom_attachments,
     aws_iam_role_policy_attachment.lambda_logs,
+    aws_iam_role_policy_attachment.ingest_sqs_attach,
     aws_lambda_layer_version.google_api_layer
   ]
 }
