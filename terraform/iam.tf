@@ -79,3 +79,24 @@ resource "aws_iam_role_policy_attachment" "custom_attachments" {
   role       = aws_iam_role.ingest_lambda_exec.name
   policy_arn = each.value
 }
+
+resource "aws_iam_policy" "ingest_sqs_send" {
+  name        = "inbox-janitor-ingest-sqs-send"
+  description = "Allows ingest lambda to push message records to enforce FIFO queue"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = ["sqs:SendMessage"]
+        Effect   = "Allow"
+        Resource = aws_sqs_queue.enforce_queue.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ingest_sqs_attach" {
+  role       = aws_iam_role.ingest_lambda_exec.name
+  policy_arn = aws_iam_policy.ingest_sqs_send.arn
+}
