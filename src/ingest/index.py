@@ -1,9 +1,9 @@
+import base64
+from datetime import datetime, timezone
 import json
 import logging
-import base64
 import os
 import boto3
-from datetime import datetime, timezone
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -12,16 +12,15 @@ logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource("dynamodb")
 secrets_client = boto3.client("secretsmanager")
-lambda_client = boto3.client("lambda")
+sqs_client = boto3.client("sqs")
 
 LOGS_TABLE_NAME = os.environ.get("LOGS_TABLE", "inbox-janitor-raw-email-logs-tf")
 RULES_TABLE_NAME = os.environ.get(
     "RULES_TABLE", "inbox-janitor-active-routing-rules-tf"
 )
 SECRET_ARN = os.environ.get("SECRET_ARN")
-
 GCP_PUBSUB_TOPIC = os.environ.get("GCP_PUBSUB_TOPIC")
-ENFORCE_LAMBDA_NAME = os.environ.get("ENFORCE_LAMBDA_NAME", "inbox-janitor-enforce-tf")
+ENFORCE_QUEUE_URL = os.environ.get("ENFORCE_QUEUE_URL")
 
 LOGS_TABLE = dynamodb.Table(LOGS_TABLE_NAME)
 RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
@@ -68,20 +67,53 @@ def save_last_history_id(incoming_history_id):
             Item={
                 "sender_address": "__SYSTEM_STATE__",
                 "last_history_id": numeric_id,
-                "updated_at": datetime.now(timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z"),
+                "updated_at": (
+                    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                ),
             },
-            ConditionExpression="attribute_not_exists(last_history_id) OR last_history_id < :new_id",
+            ConditionExpression=(
+                "attribute_not_exists(last_history_id) OR last_history_id < :new_id"
+            ),
             ExpressionAttributeValues={":new_id": numeric_id},
         )
         logger.info(f"Successfully updated __SYSTEM_STATE__ cursor to {numeric_id}")
     except boto3.client("dynamodb").exceptions.ConditionalCheckFailedException:
         logger.info(
-            f"Skipped updating last_history_id to {incoming_history_id} (superseded by newer execution pass)."
+            f"Skipped updating last_history_id to {incoming_history_id} (superseded"
+            " by newer execution pass)."
         )
     except Exception as e:
         logger.error(f"Failed saving last_history_id: {str(e)}")
+
+
+def enqueue_enforce_records(message_pairs):
+    if not message_pairs or not ENFORCE_QUEUE_URL:
+        return
+
+    entries = []
+    for idx, pair in enumerate(message_pairs):
+        entries.append(
+            {
+                "Id": str(idx),
+                "MessageBody": json.dumps(pair),
+                "MessageDeduplicationId": pair["message_id"],
+                "MessageGroupId": "gmail_enforce_group",
+            }
+        )
+
+    # SQS send_message_batch supports up to 10 items per API request
+    for i in range(0, len(entries), 10):
+        batch_chunk = entries[i : i + 10]
+        try:
+            response = sqs_client.send_message_batch(
+                QueueUrl=ENFORCE_QUEUE_URL, Entries=batch_chunk
+            )
+            logger.info(
+                f"Enqueued {len(batch_chunk)} record(s) to SQS. Failed count:"
+                f" {len(response.get('Failed', []))}"
+            )
+        except Exception as e:
+            logger.error(f"Failed pushing batch chunk to SQS: {str(e)}")
 
 
 def lambda_handler(event, context):
@@ -96,7 +128,9 @@ def lambda_handler(event, context):
                 pubsub_event = json.loads(decoded_data)
                 pubsub_history_id = pubsub_event.get("historyId")
                 logger.info(
-                    f"Received Pub/Sub Push for account: {pubsub_event.get('emailAddress')} | History ID: {pubsub_history_id}"
+                    f"Received Pub/Sub Push for account:"
+                    f" {pubsub_event.get('emailAddress')} | History ID:"
+                    f" {pubsub_history_id}"
                 )
         except Exception as e:
             logger.warning(f"Could not parse body as Pub/Sub payload: {str(e)}")
@@ -106,10 +140,7 @@ def lambda_handler(event, context):
     register_gmail_watch(service)
 
     if not pubsub_history_id:
-        logger.info(
-            "No historyId present in payload. Skipping sync pass; waiting for next event."
-        )
-        logger.info("=== Finished Inbox Janitor Ingest Execution Pass ===")
+        logger.info("No historyId present in payload. Skipping sync pass.")
         return {
             "statusCode": 200,
             "body": json.dumps("No historyId found; pass skipped."),
@@ -122,14 +153,15 @@ def lambda_handler(event, context):
 
     if not last_history_id:
         logger.info(
-            f"No previous cursor found in DynamoDB. Initializing __SYSTEM_STATE__ to {pubsub_history_id}"
+            "No previous cursor found in DynamoDB. Initializing __SYSTEM_STATE__"
+            f" to {pubsub_history_id}"
         )
         save_last_history_id(pubsub_history_id)
-        logger.info("=== Finished Inbox Janitor Ingest Execution Pass ===")
         return {"statusCode": 200, "body": json.dumps("Initialized system cursor.")}
 
     logger.info(
-        f"Fetching history records starting from cursor History ID: {last_history_id}"
+        "Fetching history records starting from cursor History ID:"
+        f" {last_history_id}"
     )
 
     try:
@@ -171,14 +203,7 @@ def lambda_handler(event, context):
         evaluate_and_update_policies(processed_senders)
 
     if new_message_pairs:
-        logger.info(
-            f"Invoking {ENFORCE_LAMBDA_NAME} with {len(new_message_pairs)} record(s): {new_message_pairs}"
-        )
-        lambda_client.invoke(
-            FunctionName=ENFORCE_LAMBDA_NAME,
-            InvocationType="Event",
-            Payload=json.dumps({"records": new_message_pairs}),
-        )
+        enqueue_enforce_records(new_message_pairs)
 
     logger.info("=== Finished Inbox Janitor Ingest Execution Pass ===")
     return {"statusCode": 200, "body": json.dumps("Success")}
@@ -249,7 +274,6 @@ def evaluate_and_update_policies(processed_senders):
         sender_name = items[0].get("sender_name", "Unknown") if items else "Unknown"
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        # Use update_item to set policy metadata AND ensure GSI keys are preserved
         RULES_TABLE.update_item(
             Key={"sender_address": address},
             UpdateExpression=(
