@@ -57,7 +57,7 @@ def increment_trashed_counts(trashed_senders_map):
         try:
             RULES_TABLE.update_item(
                 Key={"sender_address": sender},
-                UpdateExpression=("SET entity_type = :et ADD trashed_count :val"),
+                UpdateExpression="SET entity_type = :et ADD trashed_count :val",
                 ExpressionAttributeValues={":et": "RULE", ":val": count},
             )
             logger.info(f"Updated {sender}: trashed_count +{count}, entity_type=RULE")
@@ -68,44 +68,40 @@ def increment_trashed_counts(trashed_senders_map):
 def lambda_handler(event, context):
     logger.info("=== Starting Inbox Janitor Enforcement Pass ===")
 
-    raw_records = event.get("records", event.get("message_ids", []))
-    if not raw_records:
-        logger.info("No records in event payload. Exiting cleanly.")
+    sqs_records = event.get("Records", [])
+    if not sqs_records:
+        logger.info("No SQS Records in event payload. Exiting cleanly.")
         return {"statusCode": 200, "body": json.dumps("No messages to process.")}
 
-    creds = get_google_credentials()
-    service = build("gmail", "v1", credentials=creds)
-
-    # 1. Standardize records format & extract distinct senders
     messages_to_process = []
     distinct_senders = set()
 
-    for item in raw_records:
-        if isinstance(item, dict):
-            messages_to_process.append(item)
-            distinct_senders.add(item["sender_address"])
-        else:
-            sender = fetch_sender_from_gmail(service, item)
-            if sender:
-                messages_to_process.append(
-                    {"message_id": item, "sender_address": sender}
-                )
-                distinct_senders.add(sender)
+    # Extract payloads passed from SQS Event Source Mapping
+    for record in sqs_records:
+        try:
+            payload = json.loads(record["body"])
+            if isinstance(payload, dict) and "message_id" in payload:
+                messages_to_process.append(payload)
+                distinct_senders.add(payload["sender_address"])
+        except Exception as e:
+            logger.error(f"Failed parsing SQS record body: {str(e)}")
 
     if not messages_to_process:
         return {"statusCode": 200, "body": json.dumps("No valid messages parsed.")}
 
-    # 2. Batch fetch policies from DynamoDB in ONE call
+    creds = get_google_credentials()
+    service = build("gmail", "v1", credentials=creds)
+
+    # Fetch active sender policies
     policy_map = get_policies_for_senders(distinct_senders)
 
-    # 3. Filter messages whose active policy is 'DELETE' (keep full dict objects)
+    # Filter messages whose active policy is 'DELETE'
     messages_to_trash = [
         msg
         for msg in messages_to_process
         if policy_map.get(msg["sender_address"], "ALLOW") == "DELETE"
     ]
 
-    # 4. Execute Batch HTTP Request via Google Client Library
     trashed_count = 0
     trashed_senders_map = {}
 
@@ -132,7 +128,6 @@ def lambda_handler(event, context):
 
         batch = service.new_batch_http_request(callback=trash_callback)
         for msg in messages_to_trash:
-            # Explicit request_id enables matching response back to sender_address
             batch.add(
                 service.users().messages().trash(userId="me", id=msg["message_id"]),
                 request_id=msg["message_id"],
@@ -140,7 +135,6 @@ def lambda_handler(event, context):
 
         batch.execute()
 
-        # 5. Atomic writes to DynamoDB for GSI sorting and Global totals
         if trashed_senders_map:
             increment_trashed_counts(trashed_senders_map)
 
@@ -172,21 +166,3 @@ def get_policies_for_senders(senders):
     except Exception as e:
         logger.error(f"Error batch fetching policies: {str(e)}")
         return {}
-
-
-def fetch_sender_from_gmail(service, msg_id):
-    try:
-        detail = (
-            service.users()
-            .messages()
-            .get(userId="me", id=msg_id, format="metadata")
-            .execute()
-        )
-        headers = {
-            h["name"]: h["value"] for h in detail.get("payload", {}).get("headers", [])
-        }
-        sender_full = headers.get("From", "")
-        return sender_full.split("<")[-1].replace(">", "").lower().strip()
-    except Exception as e:
-        logger.error(f"Error fetching sender metadata for {msg_id}: {str(e)}")
-        return None

@@ -39,6 +39,11 @@ resource "aws_iam_role_policy_attachment" "enforce_custom_attachments" {
   policy_arn = each.value
 }
 
+resource "aws_iam_role_policy_attachment" "enforce_sqs_execution" {
+  role       = aws_iam_role.enforce_lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole"
+}
+
 # 3. Provision Enforce Lambda Function
 resource "aws_lambda_function" "enforce_engine" {
   function_name = "inbox-janitor-enforce-tf"
