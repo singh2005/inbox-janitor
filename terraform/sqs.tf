@@ -20,8 +20,7 @@ resource "aws_sqs_queue" "enforce_queue" {
 
 # 3. SQS Event Source Mapping to Enforce Lambda
 resource "aws_lambda_event_source_mapping" "sqs_to_enforce" {
-  event_source_arn                   = aws_sqs_queue.enforce_queue.arn
-  function_name                      = aws_lambda_function.enforce_engine.arn
-  batch_size                         = 10
-  maximum_batching_window_in_seconds = 5
+  event_source_arn = aws_sqs_queue.enforce_queue.arn
+  function_name    = aws_lambda_function.enforce_engine.arn
+  batch_size       = 10
 }
