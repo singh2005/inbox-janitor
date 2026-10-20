@@ -3,11 +3,11 @@
 <!-- TOP_SENDERS_START -->
 | Rank | Sender Address | Trashed Count |
 | :--- | :--- | :--- |
-| 1 | `dsw@e.dsw.com` | 23 |
-| 2 | `hello@newsbreakexpress.com` | 20 |
-| 3 | `no-reply@rs.email.nextdoor.com` | 18 |
-| 4 | `store-news@amazon.com` | 16 |
-| 5 | `gap@email.gap.com` | 15 |
+| 1 | `dsw@e.dsw.com` | 25 |
+| 2 | `hello@newsbreakexpress.com` | 21 |
+| 3 | `no-reply@rs.email.nextdoor.com` | 19 |
+| 4 | `gap@email.gap.com` | 16 |
+| 5 | `store-news@amazon.com` | 16 |
 <!-- TOP_SENDERS_END -->
 
 ---
