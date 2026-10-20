@@ -12,7 +12,6 @@ resource "aws_cloudwatch_dashboard" "inbox_janitor_pipeline" {
         height = 6
         properties = {
           metrics = [
-            # Use ApiId instead of ApiName for HTTP APIs (v2)
             ["AWS/ApiGateway", "Count", "ApiId", aws_apigatewayv2_api.ingest_api.id, { stat = "Sum", period = 60 }],
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.ingest_engine.function_name, { stat = "Sum", period = 60 }],
             ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.ingest_engine.function_name, { stat = "Sum", period = 60, color = "#d62728" }]
@@ -62,8 +61,8 @@ resource "aws_cloudwatch_dashboard" "inbox_janitor_pipeline" {
           title   = "Enforce Engine Executions & Latency"
           region  = "us-east-1"
           yAxis = {
-            left  = { title = "Count", min = 0 }
-            right = { title = "Milliseconds (ms)", min = 0 }
+            left  = { min = 0 }
+            right = { min = 0 }
           }
         }
       },
@@ -77,8 +76,8 @@ resource "aws_cloudwatch_dashboard" "inbox_janitor_pipeline" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/DynamoDB", "SystemErrors", "TableName", aws_dynamodb_table.raw_email_logs.name, { stat = "Sum", period = 60, fill = "ZERO" }],
-            ["AWS/DynamoDB", "SystemErrors", "TableName", aws_dynamodb_table.active_routing_rules.name, { stat = "Sum", period = 60, fill = "ZERO" }]
+            ["AWS/DynamoDB", "SystemErrors", "TableName", aws_dynamodb_table.raw_email_logs.name, { stat = "Sum", period = 60 }],
+            ["AWS/DynamoDB", "SystemErrors", "TableName", aws_dynamodb_table.active_routing_rules.name, { stat = "Sum", period = 60 }]
           ]
           view    = "timeSeries"
           stacked = false
