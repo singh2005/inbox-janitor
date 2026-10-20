@@ -6,8 +6,8 @@
 | 1 | `dsw@e.dsw.com` | 23 |
 | 2 | `hello@newsbreakexpress.com` | 20 |
 | 3 | `no-reply@rs.email.nextdoor.com` | 18 |
-| 4 | `gap@email.gap.com` | 15 |
-| 5 | `store-news@amazon.com` | 15 |
+| 4 | `store-news@amazon.com` | 16 |
+| 5 | `gap@email.gap.com` | 15 |
 <!-- TOP_SENDERS_END -->
 
 ---
