@@ -13,6 +13,11 @@ resource "aws_dynamodb_table" "raw_email_logs" {
     name = "timestamp_message_id"
     type = "S"
   }
+
+  ttl {
+    attribute_name = "ttl_timestamp"
+    enabled        = true
+  }
 }
 
 resource "aws_dynamodb_table" "active_routing_rules" {
