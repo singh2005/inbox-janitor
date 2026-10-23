@@ -7,7 +7,7 @@
 | 2 | `gap@email.gap.com` | 24 |
 | 3 | `hello@newsbreakexpress.com` | 24 |
 | 4 | `no-reply@rs.email.nextdoor.com` | 22 |
-| 5 | `marshalls@eml.marshalls.com` | 20 |
+| 5 | `sportsmanswarehouse@d.sportsmans.com` | 21 |
 <!-- TOP_SENDERS_END -->
 
 ---
