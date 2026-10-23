@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+import time
 import boto3
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -24,6 +25,9 @@ ENFORCE_QUEUE_URL = os.environ.get("ENFORCE_QUEUE_URL")
 
 LOGS_TABLE = dynamodb.Table(LOGS_TABLE_NAME)
 RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
+
+# 45-day retention in seconds (45 * 24 * 60 * 60)
+TTL_RETENTION_SECONDS = 3888000
 
 
 def register_gmail_watch(service):
@@ -63,6 +67,7 @@ def get_last_history_id():
 def save_last_history_id(incoming_history_id):
     try:
         numeric_id = int(incoming_history_id)
+        # Note: __SYSTEM_STATE__ intentionally excludes ttl_timestamp so it never expires
         RULES_TABLE.put_item(
             Item={
                 "sender_address": "__SYSTEM_STATE__",
@@ -101,7 +106,6 @@ def enqueue_enforce_records(message_pairs):
             }
         )
 
-    # SQS send_message_batch supports up to 10 items per API request
     for i in range(0, len(entries), 10):
         batch_chunk = entries[i : i + 10]
         try:
@@ -239,6 +243,10 @@ def process_single_message(service, msg_id):
         )
         sort_key = f"{iso_timestamp}#{msg_id}"
 
+        # Dynamically calculate TTL timestamp per execution
+        now_epoch = int(time.time())
+        ttl_timestamp = now_epoch + TTL_RETENTION_SECONDS
+
         LOGS_TABLE.put_item(
             Item={
                 "sender_address": sender_address,
@@ -248,6 +256,7 @@ def process_single_message(service, msg_id):
                 "subject": subject,
                 "status": status,
                 "timestamp": iso_timestamp,
+                "ttl_timestamp": ttl_timestamp,
             }
         )
         logger.info(f"Upserted DynamoDB record for {sender_address} | Status: {status}")
