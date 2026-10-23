@@ -30,13 +30,50 @@ RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
 TTL_RETENTION_SECONDS = 3888000
 
 
-def register_gmail_watch(service):
+def check_and_renew_gmail_watch(service):
+    """
+    Renews the Gmail watch subscription only if it's missing or expiring within 24 hours.
+    Avoids redundant API calls on every incoming webhook execution pass.
+    """
     if not GCP_PUBSUB_TOPIC:
         logger.error("GCP_PUBSUB_TOPIC environment variable is not set!")
         return
-    request_body = {"topicName": GCP_PUBSUB_TOPIC}
-    response = service.users().watch(userId="me", body=request_body).execute()
-    logger.info(f"Gmail Watch Registered! Expiration MS: {response.get('expiration')}")
+
+    now_ms = int(time.time() * 1000)
+    renew_buffer_ms = 24 * 60 * 60 * 1000  # 24 hours in milliseconds
+
+    try:
+        # Check current watch expiration stored in DynamoDB
+        resp = RULES_TABLE.get_item(Key={"sender_address": "__SYSTEM_STATE__"})
+        raw_exp = resp["Item"].get("watch_expiration_ms") if "Item" in resp else None
+        current_expiration = int(raw_exp) if raw_exp is not None else None
+
+        # If expiration exists and is more than 24 hours in the future, skip renewal
+        if current_expiration and (current_expiration - now_ms > renew_buffer_ms):
+            logger.info(
+                f"Gmail Watch active. Expiration in "
+                f"{(int(current_expiration) - now_ms) // (1000 * 3600)}h. Skipping renew."
+            )
+            return
+
+        # Register watch call when expired, missing, or close to expiration
+        request_body = {"topicName": GCP_PUBSUB_TOPIC}
+        response = service.users().watch(userId="me", body=request_body).execute()
+        new_expiration_ms = int(response.get("expiration", 0))
+
+        logger.info(f"Gmail Watch Renewed! New Expiration MS: {new_expiration_ms}")
+
+        # Update watch expiration in __SYSTEM_STATE__
+        RULES_TABLE.update_item(
+            Key={"sender_address": "__SYSTEM_STATE__"},
+            UpdateExpression="SET watch_expiration_ms = :exp, updated_at = :ua",
+            ExpressionAttributeValues={
+                ":exp": new_expiration_ms,
+                ":ua": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            },
+        )
+    except Exception as e:
+        logger.error(f"Failed during check_and_renew_gmail_watch: {str(e)}")
 
 
 def get_google_credentials():
@@ -67,18 +104,16 @@ def get_last_history_id():
 def save_last_history_id(incoming_history_id):
     try:
         numeric_id = int(incoming_history_id)
-        RULES_TABLE.put_item(
-            Item={
-                "sender_address": "__SYSTEM_STATE__",
-                "last_history_id": numeric_id,
-                "updated_at": (
-                    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-                ),
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+        RULES_TABLE.update_item(
+            Key={"sender_address": "__SYSTEM_STATE__"},
+            UpdateExpression="SET last_history_id = :new_id, updated_at = :ua",
+            ConditionExpression="attribute_not_exists(last_history_id) OR last_history_id < :new_id",
+            ExpressionAttributeValues={
+                ":new_id": numeric_id,
+                ":ua": now_iso,
             },
-            ConditionExpression=(
-                "attribute_not_exists(last_history_id) OR last_history_id < :new_id"
-            ),
-            ExpressionAttributeValues={":new_id": numeric_id},
         )
         logger.info(f"Successfully updated __SYSTEM_STATE__ cursor to {numeric_id}")
     except boto3.client("dynamodb").exceptions.ConditionalCheckFailedException:
@@ -140,7 +175,7 @@ def lambda_handler(event, context):
 
     creds = get_google_credentials()
     service = build("gmail", "v1", credentials=creds)
-    register_gmail_watch(service)
+    check_and_renew_gmail_watch(service)
 
     if not pubsub_history_id:
         logger.info("No historyId present in payload. Skipping sync pass.")
