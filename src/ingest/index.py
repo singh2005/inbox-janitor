@@ -67,7 +67,6 @@ def get_last_history_id():
 def save_last_history_id(incoming_history_id):
     try:
         numeric_id = int(incoming_history_id)
-        # Note: __SYSTEM_STATE__ intentionally excludes ttl_timestamp so it never expires
         RULES_TABLE.put_item(
             Item={
                 "sender_address": "__SYSTEM_STATE__",
@@ -243,7 +242,6 @@ def process_single_message(service, msg_id):
         )
         sort_key = f"{iso_timestamp}#{msg_id}"
 
-        # Dynamically calculate TTL timestamp per execution
         now_epoch = int(time.time())
         ttl_timestamp = now_epoch + TTL_RETENTION_SECONDS
 
