@@ -22,6 +22,9 @@ RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
 def get_google_credentials():
     response = secrets_client.get_secret_value(SecretId=SECRET_ARN)
     secret_json = json.loads(response["SecretString"])
+    # Keeping gmail.modify for now so existing tokens don't throw scope mismatch errors.
+    # When ready to reduce scope, change this to:
+    # ["https://www.googleapis.com/auth/gmail.metadata", "https://www.googleapis.com/auth/gmail.labels"]
     scopes = ["https://www.googleapis.com/auth/gmail.modify"]
 
     return Credentials(
@@ -106,36 +109,30 @@ def lambda_handler(event, context):
     trashed_senders_map = {}
 
     if messages_to_trash:
-        logger.info(f"Batch trashing {len(messages_to_trash)} message(s)")
+        message_ids = [msg["message_id"] for msg in messages_to_trash]
+        logger.info(f"Batch trashing {len(message_ids)} message(s) via batchModify")
 
-        def trash_callback(request_id, response, exception):
-            nonlocal trashed_count
-            if exception is not None:
-                logger.error(
-                    f"Error trashing message {request_id} in batch: {exception}"
-                )
-            else:
-                trashed_count += 1
-                sender = next(
-                    (
-                        m["sender_address"]
-                        for m in messages_to_trash
-                        if m["message_id"] == request_id
-                    ),
-                    "unknown",
-                )
+        # Process in batches of 1000 (Gmail API hard limit for batchModify)
+        batch_size = 1000
+        for i in range(0, len(message_ids), batch_size):
+            chunk = message_ids[i : i + batch_size]
+            body = {
+                "ids": chunk,
+                "addLabelIds": ["TRASH"],
+                "removeLabelIds": ["INBOX"],
+            }
+            try:
+                service.users().messages().batchModify(userId="me", body=body).execute()
+                trashed_count += len(chunk)
+            except Exception as e:
+                logger.error(f"Error during batchModify execution: {str(e)}")
+
+        # Build sender metrics map for successfully processed messages
+        if trashed_count > 0:
+            for msg in messages_to_trash:
+                sender = msg.get("sender_address", "unknown")
                 trashed_senders_map[sender] = trashed_senders_map.get(sender, 0) + 1
 
-        batch = service.new_batch_http_request(callback=trash_callback)
-        for msg in messages_to_trash:
-            batch.add(
-                service.users().messages().trash(userId="me", id=msg["message_id"]),
-                request_id=msg["message_id"],
-            )
-
-        batch.execute()
-
-        if trashed_senders_map:
             increment_trashed_counts(trashed_senders_map)
 
     logger.info(f"=== Enforcement Complete. Trashed {trashed_count} messages. ===")
