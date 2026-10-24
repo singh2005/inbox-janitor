@@ -3,7 +3,7 @@
 <!-- TOP_SENDERS_START -->
 | Rank | Sender Address | Trashed Count |
 | :--- | :--- | :--- |
-| 1 | `dsw@e.dsw.com` | 33 |
+| 1 | `dsw@e.dsw.com` | 34 |
 | 2 | `gap@email.gap.com` | 24 |
 | 3 | `hello@newsbreakexpress.com` | 24 |
 | 4 | `no-reply@rs.email.nextdoor.com` | 22 |
