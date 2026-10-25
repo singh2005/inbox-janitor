@@ -22,10 +22,11 @@ RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
 def get_google_credentials():
     response = secrets_client.get_secret_value(SecretId=SECRET_ARN)
     secret_json = json.loads(response["SecretString"])
-    # Keeping gmail.modify for now so existing tokens don't throw scope mismatch errors.
-    # When ready to reduce scope, change this to:
-    # ["https://www.googleapis.com/auth/gmail.metadata", "https://www.googleapis.com/auth/gmail.labels"]
-    scopes = ["https://www.googleapis.com/auth/gmail.modify"]
+
+    scopes = [
+        "https://www.googleapis.com/auth/gmail.metadata",
+        "https://www.googleapis.com/auth/gmail.labels",
+    ]
 
     return Credentials(
         token=None,
