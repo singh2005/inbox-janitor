@@ -23,7 +23,7 @@ def get_google_credentials():
     response = secrets_client.get_secret_value(SecretId=SECRET_ARN)
     secret_json = json.loads(response["SecretString"])
 
-    scopes = ["https://www.googleapis.com/auth/gmail.modify"]
+    scopes = ["https://www.googleapis.com/auth/gmail.metadata"]
 
     return Credentials(
         token=None,
