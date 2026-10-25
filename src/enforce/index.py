@@ -69,75 +69,96 @@ def increment_trashed_counts(trashed_senders_map):
 def lambda_handler(event, context):
     logger.info("=== Starting Inbox Janitor Enforcement Pass ===")
 
+    batch_item_failures = []
     sqs_records = event.get("Records", [])
+
     if not sqs_records:
         logger.info("No SQS Records in event payload. Exiting cleanly.")
-        return {"statusCode": 200, "body": json.dumps("No messages to process.")}
+        return {"batchItemFailures": []}
 
+    # Map each parsed email message payload to its originating SQS messageId
     messages_to_process = []
     distinct_senders = set()
 
-    # Extract payloads passed from SQS Event Source Mapping
     for record in sqs_records:
+        sqs_msg_id = record["messageId"]
         try:
             payload = json.loads(record["body"])
             if isinstance(payload, dict) and "message_id" in payload:
+                payload["_sqs_message_id"] = sqs_msg_id
                 messages_to_process.append(payload)
                 distinct_senders.add(payload["sender_address"])
+            else:
+                logger.warning(
+                    f"Malformed payload in SQS message {sqs_msg_id}. Dropping."
+                )
         except Exception as e:
-            logger.error(f"Failed parsing SQS record body: {str(e)}")
+            logger.error(f"Failed parsing SQS record body for {sqs_msg_id}: {str(e)}")
+            # If payload cannot be parsed as JSON, flag it as a failure to prevent silent drop
+            batch_item_failures.append({"itemIdentifier": sqs_msg_id})
 
     if not messages_to_process:
-        return {"statusCode": 200, "body": json.dumps("No valid messages parsed.")}
-
-    creds = get_google_credentials()
-    service = build("gmail", "v1", credentials=creds)
+        return {"batchItemFailures": batch_item_failures}
 
     # Fetch active sender policies
     policy_map = get_policies_for_senders(distinct_senders)
 
     # Filter messages whose active policy is 'DELETE'
+    # Note: ALLOWed messages require no Gmail API mutation and are considered cleanly processed.
     messages_to_trash = [
         msg
         for msg in messages_to_process
         if policy_map.get(msg["sender_address"], "ALLOW") == "DELETE"
     ]
 
-    trashed_count = 0
-    trashed_senders_map = {}
-
     if messages_to_trash:
+        creds = get_google_credentials()
+        service = build("gmail", "v1", credentials=creds)
+
         message_ids = [msg["message_id"] for msg in messages_to_trash]
         logger.info(f"Batch trashing {len(message_ids)} message(s) via batchModify")
 
-        # Process in batches of 1000 (Gmail API hard limit for batchModify)
+        trashed_count = 0
+        trashed_senders_map = {}
+
+        # Process in chunks of 1000 (Gmail API hard limit for batchModify)
         batch_size = 1000
         for i in range(0, len(message_ids), batch_size):
-            chunk = message_ids[i : i + batch_size]
+            chunk_msgs = messages_to_trash[i : i + batch_size]
+            chunk_ids = [msg["message_id"] for msg in chunk_msgs]
+
             body = {
-                "ids": chunk,
+                "ids": chunk_ids,
                 "addLabelIds": ["TRASH"],
                 "removeLabelIds": ["INBOX"],
             }
+
             try:
                 service.users().messages().batchModify(userId="me", body=body).execute()
-                trashed_count += len(chunk)
+                trashed_count += len(chunk_ids)
+
+                # Record successful sender stats
+                for msg in chunk_msgs:
+                    sender = msg.get("sender_address", "unknown")
+                    trashed_senders_map[sender] = trashed_senders_map.get(sender, 0) + 1
+
             except Exception as e:
-                logger.error(f"Error during batchModify execution: {str(e)}")
+                logger.error(f"Error during batchModify execution for chunk: {str(e)}")
+                # If API call fails, flag all SQS messageIds in this chunk for retry
+                for msg in chunk_msgs:
+                    batch_item_failures.append(
+                        {"itemIdentifier": msg["_sqs_message_id"]}
+                    )
 
-        # Build sender metrics map for successfully processed messages
-        if trashed_count > 0:
-            for msg in messages_to_trash:
-                sender = msg.get("sender_address", "unknown")
-                trashed_senders_map[sender] = trashed_senders_map.get(sender, 0) + 1
-
+        if trashed_senders_map:
             increment_trashed_counts(trashed_senders_map)
 
-    logger.info(f"=== Enforcement Complete. Trashed {trashed_count} messages. ===")
-    return {
-        "statusCode": 200,
-        "body": json.dumps(f"Trashed {trashed_count} messages."),
-    }
+        logger.info(
+            f"=== Enforcement Complete. Successfully trashed {trashed_count}/"
+            f"{len(messages_to_trash)} messages. Failures: {len(batch_item_failures)} ==="
+        )
+
+    return {"batchItemFailures": batch_item_failures}
 
 
 def get_policies_for_senders(senders):
