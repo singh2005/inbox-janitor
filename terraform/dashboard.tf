@@ -14,7 +14,8 @@ resource "aws_cloudwatch_dashboard" "inbox_janitor_pipeline" {
           metrics = [
             ["AWS/ApiGateway", "Count", "ApiId", aws_apigatewayv2_api.ingest_api.id, { stat = "Sum", period = 60 }],
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.ingest_engine.function_name, { stat = "Sum", period = 60 }],
-            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.ingest_engine.function_name, { stat = "Sum", period = 60, color = "#d62728" }]
+            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.ingest_engine.function_name, { stat = "Sum", period = 60, color = "#d62728" }],
+            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.ingest_engine.function_name, { stat = "Average", period = 60, yAxis = "right" }]
           ]
           view    = "timeSeries"
           stacked = false
