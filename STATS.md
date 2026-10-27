@@ -5,9 +5,9 @@
 | :--- | :--- | :--- |
 | 1 | `dsw@e.dsw.com` | 44 |
 | 2 | `gap@email.gap.com` | 33 |
-| 3 | `hello@newsbreakexpress.com` | 27 |
-| 4 | `marshalls@eml.marshalls.com` | 27 |
-| 5 | `sportsmanswarehouse@d.sportsmans.com` | 26 |
+| 3 | `marshalls@eml.marshalls.com` | 28 |
+| 4 | `sportsmanswarehouse@d.sportsmans.com` | 27 |
+| 5 | `hello@newsbreakexpress.com` | 27 |
 <!-- TOP_SENDERS_END -->
 
 ---
