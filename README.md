@@ -67,14 +67,14 @@ Inbox Janitor operates on an immediate, decoupled feedback loop between Google G
 ## How You Control Rules Just By Using Your Inbox
 
 You never need to log into AWS, edit a database, or manage routing rules manually. Your day-to-day interactions with your inbox serve as the single source of truth:
-* **Automatic Escalation (ALLOW → DELETE): A newsletter sends 6 emails in a row that sit unread. The system flags the sender with a 6/6 unread streak and automatically sets their active policy to DELETE.
-* **Instant Reversion (DELETE → ALLOW): If a message from that sender is moved to Trash but turns out to be important, simply open and read the email in your Trash folder.
-* **Real-Time Policy Reset: The read status change fires a real-time push event via GCP Pub/Sub directly to the AWS ingest engine. The system recalculates the rolling window (e.g., dropping the streak to 5/6), instantly updates the sender's active policy back to ALLOW, and ensures future emails land safely in your primary inbox.
+* **Automatic Escalation (ALLOW → DELETE):** A newsletter sends 6 emails in a row that sit unread. The system flags the sender with a 6/6 unread streak and automatically sets their active policy to DELETE.
+* **Instant Reversion (DELETE → ALLOW):** If a message from that sender is moved to Trash but turns out to be important, simply open and read the email in your Trash folder.
+* **Real-Time Policy Reset:** The read status change fires a real-time push event via GCP Pub/Sub directly to the AWS ingest engine. The system recalculates the rolling window (e.g., dropping the streak to 5/6), instantly updates the sender's active policy back to ALLOW, and ensures future emails land safely in your primary inbox.
 ---
 ## Cloud-Native Infrastructure & One-Click Deployment
-* **Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into any cloud environment.
-* **Dual-Cloud Architecture (AWS + GCP): Harnesses Google Cloud Pub/Sub for native Gmail event streaming and AWS Serverless (API Gateway, SQS FIFO, Lambda, DynamoDB, Secrets Manager) for asynchronous processing, retry handling, and policy evaluation.
-* **Fault-Tolerant Queueing: Decouples ingestion from enforcement using SQS FIFO queues with partial batch failure reporting (ReportBatchItemFailures) and Dead-Letter Queues (DLQ) to ensure zero message loss during transient API errors or rate-limit blips.
-* **100% Infrastructure as Code (Terraform): Everything—IAM roles, environment variables, DynamoDB tables, SQS queues, Lambda functions, and API bindings—is codified in Terraform.
-* **Zero Server Overhead: Uses fully managed serverless components that scale down to zero when idle, fitting entirely within AWS and GCP Free Tier limits for standard personal use.
-* **Turnkey Setup: Anyone can clone the repository, supply their OAuth credentials, and run terraform apply to spin up a fully functioning, personal inbox cleanup engine in minutes.
+* Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into any cloud environment.
+* **Dual-Cloud Architecture (AWS + GCP):** Harnesses Google Cloud Pub/Sub for native Gmail event streaming and AWS Serverless (API Gateway, SQS FIFO, Lambda, DynamoDB, Secrets Manager) for asynchronous processing, retry handling, and policy evaluation.
+* **Fault-Tolerant Queueing:** Decouples ingestion from enforcement using SQS FIFO queues with partial batch failure reporting (ReportBatchItemFailures) and Dead-Letter Queues (DLQ) to ensure zero message loss during transient API errors or rate-limit blips.
+* **100% Infrastructure as Code (Terraform):** Everything—IAM roles, environment variables, DynamoDB tables, SQS queues, Lambda functions, and API bindings—is codified in Terraform.
+* **Zero Server Overhead:** Uses fully managed serverless components that scale down to zero when idle, fitting entirely within AWS and GCP Free Tier limits for standard personal use.
+* **Turnkey Setup:** Anyone can clone the repository, supply their OAuth credentials, and run terraform apply to spin up a fully functioning, personal inbox cleanup engine in minutes.
