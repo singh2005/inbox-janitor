@@ -16,10 +16,11 @@
   <h1>Inbox Janitor</h1>
   <p><strong>Inbox Janitor</strong> is a serverless, event-driven personal automation tool built on AWS and Google Cloud that deterministically cleans your email inbox based on user engagement telemetry.</p>
 
-  <h2>Architecture & Operation</h2>
+<h2>Architecture & Operation</h2>
   <ul>
     <li><strong>Event-Driven Ingestion:</strong> Connects to GCP Pub/Sub webhooks triggered by Gmail push notifications.</li>
     <li><strong>Deterministic Logic:</strong> Evaluates a 6-message sliding window in DynamoDB. If 6 consecutive messages from a sender remain unread, the sender's policy switches from <code>ALLOW</code> to <code>DELETE</code>.</li>
+    <li><strong>Decoupled Enforcement:</strong> Routes matching emails through an SQS FIFO queue to asynchronously batch-trash messages via the Gmail API with fault-tolerant error recovery.</li>
     <li><strong>Self-Healing:</strong> Automatically reverts to <code>ALLOW</code> if a user manually reads or restores a trashed email.</li>
   </ul>
 
