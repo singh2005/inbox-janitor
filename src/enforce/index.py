@@ -35,35 +35,23 @@ def get_google_credentials():
     )
 
 
-def increment_trashed_counts(trashed_senders_map):
-    total_trashed_in_pass = sum(trashed_senders_map.values())
-    if total_trashed_in_pass <= 0:
+def update_global_metrics(total_trashed_count):
+    """
+    Atomic update for global metrics summary.
+    Per-sender counter tracking removed for performance and schema simplicity.
+    """
+    if total_trashed_count <= 0:
         return
 
-    # 1. Update Global Metrics Counter (__GLOBAL_METRICS__)
     try:
         RULES_TABLE.update_item(
             Key={"sender_address": "__GLOBAL_METRICS__"},
             UpdateExpression="ADD total_trashed :val",
-            ExpressionAttributeValues={":val": total_trashed_in_pass},
+            ExpressionAttributeValues={":val": total_trashed_count},
         )
-        logger.info(f"Updated __GLOBAL_METRICS__ by +{total_trashed_in_pass}")
+        logger.info(f"Updated __GLOBAL_METRICS__ by +{total_trashed_count}")
     except Exception as e:
         logger.error(f"Failed updating __GLOBAL_METRICS__: {str(e)}")
-
-    # 2. Update Per-Sender Counts & GSI Partition Key (entity_type = 'RULE')
-    for sender, count in trashed_senders_map.items():
-        if count <= 0:
-            continue
-        try:
-            RULES_TABLE.update_item(
-                Key={"sender_address": sender},
-                UpdateExpression="SET entity_type = :et ADD trashed_count :val",
-                ExpressionAttributeValues={":et": "RULE", ":val": count},
-            )
-            logger.info(f"Updated {sender}: trashed_count +{count}, entity_type=RULE")
-        except Exception as e:
-            logger.error(f"Failed updating stats for {sender}: {str(e)}")
 
 
 def lambda_handler(event, context):
@@ -76,7 +64,6 @@ def lambda_handler(event, context):
         logger.info("No SQS Records in event payload. Exiting cleanly.")
         return {"batchItemFailures": []}
 
-    # Map each parsed email message payload to its originating SQS messageId
     messages_to_process = []
     distinct_senders = set()
 
@@ -94,7 +81,6 @@ def lambda_handler(event, context):
                 )
         except Exception as e:
             logger.error(f"Failed parsing SQS record body for {sqs_msg_id}: {str(e)}")
-            # If payload cannot be parsed as JSON, flag it as a failure to prevent silent drop
             batch_item_failures.append({"itemIdentifier": sqs_msg_id})
 
     if not messages_to_process:
@@ -104,7 +90,6 @@ def lambda_handler(event, context):
     policy_map = get_policies_for_senders(distinct_senders)
 
     # Filter messages whose active policy is 'DELETE'
-    # Note: ALLOWed messages require no Gmail API mutation and are considered cleanly processed.
     messages_to_trash = [
         msg
         for msg in messages_to_process
@@ -119,7 +104,6 @@ def lambda_handler(event, context):
         logger.info(f"Batch trashing {len(message_ids)} message(s) via batchModify")
 
         trashed_count = 0
-        trashed_senders_map = {}
 
         # Process in chunks of 1000 (Gmail API hard limit for batchModify)
         batch_size = 1000
@@ -136,22 +120,15 @@ def lambda_handler(event, context):
             try:
                 service.users().messages().batchModify(userId="me", body=body).execute()
                 trashed_count += len(chunk_ids)
-
-                # Record successful sender stats
-                for msg in chunk_msgs:
-                    sender = msg.get("sender_address", "unknown")
-                    trashed_senders_map[sender] = trashed_senders_map.get(sender, 0) + 1
-
             except Exception as e:
                 logger.error(f"Error during batchModify execution for chunk: {str(e)}")
-                # If API call fails, flag all SQS messageIds in this chunk for retry
                 for msg in chunk_msgs:
                     batch_item_failures.append(
                         {"itemIdentifier": msg["_sqs_message_id"]}
                     )
 
-        if trashed_senders_map:
-            increment_trashed_counts(trashed_senders_map)
+        if trashed_count > 0:
+            update_global_metrics(trashed_count)
 
         logger.info(
             f"=== Enforcement Complete. Successfully trashed {trashed_count}/"
