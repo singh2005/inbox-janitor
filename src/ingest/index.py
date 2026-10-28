@@ -319,20 +319,17 @@ def evaluate_and_update_policies(processed_senders):
         RULES_TABLE.update_item(
             Key={"sender_address": address},
             UpdateExpression=(
-                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap,"
-                " last_evaluated = :le, entity_type = :et, trashed_count ="
-                " if_not_exists(trashed_count, :zero)"
+                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le"
+                " REMOVE trashed_count, entity_type"
             ),
             ExpressionAttributeValues={
                 ":sn": sender_name,
                 ":us": f"{unread_count}/{total_sampled}",
                 ":ap": policy,
                 ":le": now_iso,
-                ":et": "RULE",
-                ":zero": 0,
             },
         )
         logger.info(
             f"Sender: {address} | Window: {unread_count}/{total_sampled} UNREAD |"
-            f" Policy: {policy} | GSI set entity_type=RULE"
+            f" Policy: {policy}"
         )

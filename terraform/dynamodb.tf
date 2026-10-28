@@ -25,28 +25,8 @@ resource "aws_dynamodb_table" "active_routing_rules" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "sender_address"
 
-  # Primary Partition Key
   attribute {
     name = "sender_address"
     type = "S"
-  }
-
-  # GSI Partition Key
-  attribute {
-    name = "entity_type"
-    type = "S"
-  }
-
-  # GSI Sort Key
-  attribute {
-    name = "trashed_count"
-    type = "N"
-  }
-
-  global_secondary_index {
-    name            = "TopTrashedSendersIndex"
-    hash_key        = "entity_type"
-    range_key       = "trashed_count"
-    projection_type = "ALL"
   }
 }
