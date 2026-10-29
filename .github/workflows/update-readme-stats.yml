@@ -58,7 +58,7 @@ jobs:
           badge_emails = {
               'schemaVersion': 1,
               'label': 'Emails Trashed',
-              'message': f"{total_trashed:,},
+              'message': f"{total_trashed:,}",
               'color': 'blue',
           }
           with open('total_badge.json', 'w') as f:
