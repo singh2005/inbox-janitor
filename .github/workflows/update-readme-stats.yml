@@ -47,16 +47,31 @@ jobs:
           resp_global = rules_table.get_item(Key={'sender_address': '__GLOBAL_METRICS__'})
           item = resp_global.get('Item', {})
           total_trashed = item.get('total_trashed', 0)
+          total_bytes = item.get('total_bytes_trashed', 0)
+
+          if total_bytes >= 1073741824:
+              storage_display = f"{total_bytes / 1073741824:.2f} GB"
+          else:
+              storage_display = f"{total_bytes / 1048576:.1f} MB"
 
           # 2. Format Shields.io Total Badge JSON
-          badge_data = {
+          badge_emails = {
               'schemaVersion': 1,
               'label': 'Emails Trashed',
               'message': str(total_trashed),
               'color': 'blue',
           }
           with open('total_badge.json', 'w') as f:
-            json.dump(badge_data, f)
+            json.dump(badge_emails, f)
+
+          badge_storage = {
+              'schemaVersion': 1,
+              'label': 'Space Recovered',
+              'message': storage_display,
+              'color': 'success'
+          }
+          with open('storage_badge.json', 'w') as f:
+            json.dump(badge_storage, f)
           EOF
 
       - name: Push JSON Badge to Gist via GitHub API
@@ -65,10 +80,12 @@ jobs:
           GIST_ID: ${{ secrets.STATS_GIST_ID }}
         run: |
           BADGE_CONTENT=$(cat total_badge.json)
+          STORAGE_CONTENT=$(cat storage_badge.json)
 
           PAYLOAD=$(jq -n \
             --arg badge "$BADGE_CONTENT" \
-            '{files: {"total_badge.json": {content: $badge}}}')
+            --arg storage "$STORAGE_CONTENT" \
+            '{files: {"total_badge.json": {content: $badge}, "storage_badge.json": {content: $storage}}}')
 
           curl -s -X PATCH \
             -H "Authorization: Bearer $GIST_PAT" \
