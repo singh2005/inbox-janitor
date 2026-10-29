@@ -32,7 +32,8 @@ resource "aws_lambda_function" "ingest_engine" {
   filename         = data.archive_file.ingest_lambda_zip.output_path
   source_code_hash = data.archive_file.ingest_lambda_zip.output_base64sha256
 
-  # Attach your existing layer via the data lookup
+  publish = true
+
   layers = [
     aws_lambda_layer_version.google_api_layer.arn
   ]
@@ -40,19 +41,36 @@ resource "aws_lambda_function" "ingest_engine" {
   # Map environment variables to your provisioned infrastructure
   environment {
     variables = {
-      LOGS_TABLE        = aws_dynamodb_table.raw_email_logs.name
-      RULES_TABLE       = aws_dynamodb_table.active_routing_rules.name
-      SECRET_ARN        = local.gmail_credentials_secret_arn
-      GCP_PUBSUB_TOPIC  = google_pubsub_topic.gmail_push_topic.id
-      ENFORCE_QUEUE_URL = aws_sqs_queue.enforce_queue.url
+      LOGS_TABLE              = aws_dynamodb_table.raw_email_logs.name
+      RULES_TABLE             = aws_dynamodb_table.active_routing_rules.name
+      MULTITENANT_RULES_TABLE = aws_dynamodb_table.multitenant_rules.name
+      SECRET_ARN              = local.gmail_credentials_secret_arn
+      GCP_PUBSUB_TOPIC        = google_pubsub_topic.gmail_push_topic.id
+      ENFORCE_QUEUE_URL       = aws_sqs_queue.enforce_queue.url
     }
   }
 
-  # Ensure IAM permissions & roles exist BEFORE attempting to create the function
   depends_on = [
     aws_iam_role_policy_attachment.custom_attachments,
     aws_iam_role_policy_attachment.lambda_logs,
     aws_iam_role_policy_attachment.ingest_sqs_attach,
     aws_lambda_layer_version.google_api_layer
   ]
+}
+
+# --- LAMBDA ALIASES ---
+# Stable production alias
+resource "aws_lambda_alias" "ingest_prod" {
+  name             = "PROD"
+  description      = "Stable production release for general tenants"
+  function_name    = aws_lambda_function.ingest_engine.function_name
+  function_version = aws_lambda_function.ingest_engine.version
+}
+
+# Canary alias ($LATEST development build)
+resource "aws_lambda_alias" "ingest_canary" {
+  name             = "CANARY"
+  description      = "Canary release alias for targeted account validation"
+  function_name    = aws_lambda_function.ingest_engine.function_name
+  function_version = "$LATEST"
 }
