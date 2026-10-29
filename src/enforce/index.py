@@ -35,7 +35,7 @@ def get_google_credentials():
     )
 
 
-def update_global_metrics(total_trashed_count):
+def update_global_metrics(total_trashed_count, total_bytes_trashed):
     """
     Atomic update for global metrics summary.
     Per-sender counter tracking removed for performance and schema simplicity.
@@ -46,10 +46,17 @@ def update_global_metrics(total_trashed_count):
     try:
         RULES_TABLE.update_item(
             Key={"sender_address": "__GLOBAL_METRICS__"},
-            UpdateExpression="ADD total_trashed :val",
-            ExpressionAttributeValues={":val": total_trashed_count},
+            UpdateExpression="ADD total_trashed :c, total_bytes_trashed :b",
+            ExpressionAttributeValues={
+                ":c": total_trashed_count,
+                ":b": total_bytes_trashed,
+            },
         )
-        logger.info(f"Updated __GLOBAL_METRICS__ by +{total_trashed_count}")
+        mb_saved = total_bytes_trashed / (1024 * 1024)
+        logger.info(
+            f"Updated __GLOBAL_METRICS__ by +{total_trashed_count} emails, "
+            f"+{total_bytes_trashed} bytes ({mb_saved:.2f} MB)"
+        )
     except Exception as e:
         logger.error(f"Failed updating __GLOBAL_METRICS__: {str(e)}")
 
@@ -104,6 +111,7 @@ def lambda_handler(event, context):
         logger.info(f"Batch trashing {len(message_ids)} message(s) via batchModify")
 
         trashed_count = 0
+        trashed_bytes = 0
 
         # Process in chunks of 1000 (Gmail API hard limit for batchModify)
         batch_size = 1000
@@ -120,6 +128,7 @@ def lambda_handler(event, context):
             try:
                 service.users().messages().batchModify(userId="me", body=body).execute()
                 trashed_count += len(chunk_ids)
+                trashed_bytes += sum(msg.get("size_bytes", 0) for msg in chunk_msgs)
             except Exception as e:
                 logger.error(f"Error during batchModify execution for chunk: {str(e)}")
                 for msg in chunk_msgs:
@@ -128,7 +137,7 @@ def lambda_handler(event, context):
                     )
 
         if trashed_count > 0:
-            update_global_metrics(trashed_count)
+            update_global_metrics(trashed_count, trashed_bytes)
 
         logger.info(
             f"=== Enforcement Complete. Successfully trashed {trashed_count}/"

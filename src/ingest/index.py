@@ -43,12 +43,10 @@ def check_and_renew_gmail_watch(service):
     renew_buffer_ms = 24 * 60 * 60 * 1000  # 24 hours in milliseconds
 
     try:
-        # Check current watch expiration stored in DynamoDB
         resp = RULES_TABLE.get_item(Key={"sender_address": "__SYSTEM_STATE__"})
         raw_exp = resp["Item"].get("watch_expiration_ms") if "Item" in resp else None
         current_expiration = int(raw_exp) if raw_exp is not None else None
 
-        # If expiration exists and is more than 24 hours in the future, skip renewal
         if current_expiration and (current_expiration - now_ms > renew_buffer_ms):
             logger.info(
                 f"Gmail Watch active. Expiration in "
@@ -56,14 +54,12 @@ def check_and_renew_gmail_watch(service):
             )
             return
 
-        # Register watch call when expired, missing, or close to expiration
         request_body = {"topicName": GCP_PUBSUB_TOPIC}
         response = service.users().watch(userId="me", body=request_body).execute()
         new_expiration_ms = int(response.get("expiration", 0))
 
         logger.info(f"Gmail Watch Renewed! New Expiration MS: {new_expiration_ms}")
 
-        # Update watch expiration in __SYSTEM_STATE__
         RULES_TABLE.update_item(
             Key={"sender_address": "__SYSTEM_STATE__"},
             UpdateExpression="SET watch_expiration_ms = :exp, updated_at = :ua",
@@ -217,18 +213,22 @@ def lambda_handler(event, context):
             if "messagesAdded" in record:
                 for item in record["messagesAdded"]:
                     msg_id = item["message"]["id"]
-                    sender = process_single_message(service, msg_id)
+                    sender, size_bytes = process_single_message(service, msg_id)
                     if sender:
                         processed_senders.add(sender)
                         new_message_pairs.append(
-                            {"message_id": msg_id, "sender_address": sender}
+                            {
+                                "message_id": msg_id,
+                                "sender_address": sender,
+                                "size_bytes": size_bytes,
+                            }
                         )
 
             for label_event in record.get("labelsRemoved", []) + record.get(
                 "labelsAdded", []
             ):
                 msg_id = label_event["message"]["id"]
-                sender = process_single_message(service, msg_id)
+                sender, _ = process_single_message(service, msg_id)
                 if sender:
                     processed_senders.add(sender)
 
@@ -269,6 +269,9 @@ def process_single_message(service, msg_id):
         label_ids = detail.get("labelIds", [])
         status = "UNREAD" if "UNREAD" in label_ids else "READ"
 
+        raw_size = detail.get("sizeEstimate")
+        size_bytes = int(raw_size) if raw_size is not None else 0
+
         internal_date_ms = int(detail.get("internalDate", 0))
         iso_timestamp = (
             datetime.fromtimestamp(internal_date_ms / 1000.0, tz=timezone.utc)
@@ -293,10 +296,10 @@ def process_single_message(service, msg_id):
             }
         )
         logger.info(f"Upserted DynamoDB record for {sender_address} | Status: {status}")
-        return sender_address
+        return sender_address, size_bytes
     except Exception as e:
         logger.error(f"Failed processing message {msg_id}: {str(e)}")
-        return None
+        return None, 0
 
 
 def evaluate_and_update_policies(processed_senders):
@@ -319,8 +322,8 @@ def evaluate_and_update_policies(processed_senders):
         RULES_TABLE.update_item(
             Key={"sender_address": address},
             UpdateExpression=(
-                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le"
-                " REMOVE trashed_count, entity_type"
+                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le "
+                "REMOVE trashed_count, entity_type"
             ),
             ExpressionAttributeValues={
                 ":sn": sender_name,
