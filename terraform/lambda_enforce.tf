@@ -1,4 +1,3 @@
-# 1. Archive enforce Lambda function code
 data "archive_file" "enforce_lambda_zip" {
   type        = "zip"
   source_file = "${path.module}/../src/enforce/index.py"
@@ -23,7 +22,6 @@ resource "aws_iam_role" "enforce_lambda_exec" {
   })
 }
 
-# Attach execution policies
 resource "aws_iam_role_policy_attachment" "enforce_lambda_logs" {
   role       = aws_iam_role.enforce_lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -44,7 +42,6 @@ resource "aws_iam_role_policy_attachment" "enforce_sqs_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole"
 }
 
-# 3. Provision Enforce Lambda Function
 resource "aws_lambda_function" "enforce_engine" {
   function_name = "inbox-janitor-enforce-tf"
   role          = aws_iam_role.enforce_lambda_exec.arn
@@ -57,14 +54,17 @@ resource "aws_lambda_function" "enforce_engine" {
   filename         = data.archive_file.enforce_lambda_zip.output_path
   source_code_hash = data.archive_file.enforce_lambda_zip.output_base64sha256
 
+  publish = true
+
   layers = [
     aws_lambda_layer_version.google_api_layer.arn
   ]
 
   environment {
     variables = {
-      RULES_TABLE = aws_dynamodb_table.active_routing_rules.name
-      SECRET_ARN  = local.gmail_credentials_secret_arn
+      RULES_TABLE             = aws_dynamodb_table.active_routing_rules.name
+      MULTITENANT_RULES_TABLE = aws_dynamodb_table.multitenant_rules.name
+      SECRET_ARN              = local.gmail_credentials_secret_arn
     }
   }
 
@@ -73,4 +73,20 @@ resource "aws_lambda_function" "enforce_engine" {
     aws_iam_role_policy_attachment.enforce_lambda_logs,
     aws_lambda_layer_version.google_api_layer
   ]
+}
+
+# --- LAMBDA ALIASES ---
+
+resource "aws_lambda_alias" "enforce_prod" {
+  name             = "PROD"
+  description      = "Stable production release for general tenants"
+  function_name    = aws_lambda_function.enforce_engine.function_name
+  function_version = aws_lambda_function.enforce_engine.version
+}
+
+resource "aws_lambda_alias" "enforce_canary" {
+  name             = "CANARY"
+  description      = "Canary release alias for targeted account validation"
+  function_name    = aws_lambda_function.enforce_engine.function_name
+  function_version = "$LATEST"
 }
