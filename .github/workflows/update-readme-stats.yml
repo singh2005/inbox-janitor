@@ -33,18 +33,19 @@ jobs:
       - name: Install Dependencies
         run: pip install boto3
 
-      - name: Query Global Metrics & Update Badge Data
+      - name: Query Global Metrics & Generate Single Stats JSON
         run: |
           python - << 'EOF'
           import json
           import os
           import boto3
+          from datetime import datetime, timezone
 
           dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-          rules_table = dynamodb.Table('inbox-janitor-active-routing-rules-tf')
+          rules_table = dynamodb.Table('inbox-janitor-multitenant-rules-tf')
 
-          # 1. Fetch Global Total ($O(1) GetItem)
-          resp_global = rules_table.get_item(Key={'sender_address': '__GLOBAL_METRICS__'})
+          # Fetch Global Metrics using PK/SK composite keys
+          resp_global = rules_table.get_item(Key={'PK': 'GLOBAL', 'SK': 'METRICS'})
           item = resp_global.get('Item', {})
           total_trashed = item.get('total_trashed', 0)
           total_bytes = item.get('total_bytes_trashed', 0)
@@ -54,38 +55,35 @@ jobs:
           else:
               storage_display = f"{total_bytes / 1048576:.1f} MB"
 
-          # 2. Format Shields.io Total Badge JSON
-          badge_emails = {
-              'schemaVersion': 1,
-              'label': 'Emails Trashed',
-              'message': f"{total_trashed:,}",
-              'color': 'blue',
-          }
-          with open('total_badge.json', 'w') as f:
-            json.dump(badge_emails, f)
+          # Generate current UTC timestamp (e.g., "Oct 30, 06:15 UTC")
+          last_updated = datetime.now(timezone.utc).strftime("%b %d, %H:%M UTC")
 
-          badge_storage = {
-              'schemaVersion': 1,
-              'label': 'Space Recovered',
-              'message': storage_display,
-              'color': 'success'
+          # Single flat payload for Shields.io dynamic JSON queries
+          stats_payload = {
+              'total_trashed': f"{total_trashed:,}",
+              'space_recovered': storage_display,
+              'last_updated': last_updated
           }
-          with open('storage_badge.json', 'w') as f:
-            json.dump(badge_storage, f)
+
+          with open('stats.json', 'w') as f:
+              json.dump(stats_payload, f)
           EOF
 
-      - name: Push JSON Badge to Gist via GitHub API
+      - name: Push Unified JSON to Gist & Purge Legacy Files via GitHub API
         env:
           GIST_PAT: ${{ secrets.GIST_PAT }}
           GIST_ID: ${{ secrets.STATS_GIST_ID }}
         run: |
-          BADGE_CONTENT=$(cat total_badge.json)
-          STORAGE_CONTENT=$(cat storage_badge.json)
+          STATS_CONTENT=$(cat stats.json)
 
+          # Updates stats.json while explicitly sending null to delete legacy files from Gist
           PAYLOAD=$(jq -n \
-            --arg badge "$BADGE_CONTENT" \
-            --arg storage "$STORAGE_CONTENT" \
-            '{files: {"total_badge.json": {content: $badge}, "storage_badge.json": {content: $storage}}}')
+            --arg stats "$STATS_CONTENT" \
+            '{files: {
+              "stats.json": {content: $stats},
+              "total_badge.json": null,
+              "storage_badge.json": null
+            }}')
 
           curl -s -X PATCH \
             -H "Authorization: Bearer $GIST_PAT" \
