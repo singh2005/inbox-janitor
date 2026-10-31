@@ -37,16 +37,17 @@ resource "aws_iam_policy" "dynamodb_access" {
   })
 }
 
-resource "aws_iam_policy" "secrets_manager_access" {
-  name        = "inbox-janitor-secrets-manager-access"
-  description = "Allows reading Google OAuth secrets from Secrets Manager"
+# --- REPLACED SECRETS MANAGER WITH SSM PARAMETER STORE ---
+resource "aws_iam_policy" "ssm_parameter_access" {
+  name        = "inbox-janitor-ssm-parameter-access"
+  description = "Allows reading tenant Google OAuth parameters from SSM Parameter Store"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = "secretsmanager:GetSecretValue"
-      Resource = local.gmail_credentials_secret_arn
+      Action   = "ssm:GetParameter"
+      Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/inbox-janitor/tenants/*"
     }]
   })
 }
@@ -72,9 +73,9 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 
 resource "aws_iam_role_policy_attachment" "custom_attachments" {
   for_each = {
-    dynamodb        = aws_iam_policy.dynamodb_access.arn
-    secrets_manager = aws_iam_policy.secrets_manager_access.arn
-    invoke_enforce  = aws_iam_policy.allow_invoke_enforce_lambda.arn
+    dynamodb       = aws_iam_policy.dynamodb_access.arn
+    ssm_parameters = aws_iam_policy.ssm_parameter_access.arn
+    invoke_enforce = aws_iam_policy.allow_invoke_enforce_lambda.arn
   }
 
   role       = aws_iam_role.ingest_lambda_exec.name

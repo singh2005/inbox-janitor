@@ -29,8 +29,8 @@ resource "aws_iam_role_policy_attachment" "enforce_lambda_logs" {
 
 resource "aws_iam_role_policy_attachment" "enforce_custom_attachments" {
   for_each = {
-    dynamodb        = aws_iam_policy.dynamodb_access.arn
-    secrets_manager = aws_iam_policy.secrets_manager_access.arn
+    dynamodb       = aws_iam_policy.dynamodb_access.arn
+    ssm_parameters = aws_iam_policy.ssm_parameter_access.arn
   }
 
   role       = aws_iam_role.enforce_lambda_exec.name
@@ -64,7 +64,6 @@ resource "aws_lambda_function" "enforce_engine" {
     variables = {
       RULES_TABLE             = aws_dynamodb_table.active_routing_rules.name
       MULTITENANT_RULES_TABLE = aws_dynamodb_table.multitenant_rules.name
-      SECRET_ARN              = local.gmail_credentials_secret_arn
     }
   }
 
