@@ -64,7 +64,6 @@ resource "aws_lambda_function" "enforce_engine" {
     variables = {
       RULES_TABLE             = aws_dynamodb_table.active_routing_rules.name
       MULTITENANT_RULES_TABLE = aws_dynamodb_table.multitenant_rules.name
-      SECRET_ARN              = local.gmail_credentials_secret_arn
     }
   }
 
