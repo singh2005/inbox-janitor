@@ -24,13 +24,14 @@ resource "aws_iam_policy" "dynamodb_access" {
         "dynamodb:GetItem",
         "dynamodb:BatchGetItem",
         "dynamodb:Query",
+        "dynamodb:Scan",
         "dynamodb:UpdateItem",
-        "dynamodb:BatchWriteItem"
+        "dynamodb:BatchWriteItem",
+        "dynamodb:DeleteItem"
       ]
       Resource = [
-        aws_dynamodb_table.raw_email_logs.arn,
-        aws_dynamodb_table.active_routing_rules.arn,
-        "${aws_dynamodb_table.active_routing_rules.arn}/index/TopTrashedSendersIndex"
+        aws_dynamodb_table.multitenant_rules.arn,
+        "${aws_dynamodb_table.multitenant_rules.arn}/*"
       ]
     }]
   })
