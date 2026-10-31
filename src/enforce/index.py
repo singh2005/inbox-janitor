@@ -11,12 +11,11 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource("dynamodb")
 secrets_client = boto3.client("secretsmanager")
 
-RULES_TABLE_NAME = os.environ.get(
-    "RULES_TABLE", "inbox-janitor-active-routing-rules-tf"
-)
+TABLE_NAME = os.environ.get("MULTI_TABLE_NAME", "inbox-janitor-multitenant-rules-tf")
 SECRET_ARN = os.environ.get("SECRET_ARN")
+TENANT_EMAIL = os.environ.get("TENANT_EMAIL", "singh2005@gmail.com")
 
-RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
+MULTI_TABLE = dynamodb.Table(TABLE_NAME)
 
 
 def get_google_credentials():
@@ -37,15 +36,14 @@ def get_google_credentials():
 
 def update_global_metrics(total_trashed_count, total_bytes_trashed):
     """
-    Atomic update for global metrics summary.
-    Per-sender counter tracking removed for performance and schema simplicity.
+    Atomic update for global metrics summary targeting PK = GLOBAL, SK = METRICS.
     """
     if total_trashed_count <= 0:
         return
 
     try:
-        RULES_TABLE.update_item(
-            Key={"sender_address": "__GLOBAL_METRICS__"},
+        MULTI_TABLE.update_item(
+            Key={"PK": "GLOBAL", "SK": "METRICS"},
             UpdateExpression="ADD total_trashed :c, total_bytes_trashed :b",
             ExpressionAttributeValues={
                 ":c": total_trashed_count,
@@ -54,11 +52,11 @@ def update_global_metrics(total_trashed_count, total_bytes_trashed):
         )
         mb_saved = total_bytes_trashed / (1024 * 1024)
         logger.info(
-            f"Updated __GLOBAL_METRICS__ by +{total_trashed_count} emails, "
+            f"Updated GLOBAL/METRICS by +{total_trashed_count} emails, "
             f"+{total_bytes_trashed} bytes ({mb_saved:.2f} MB)"
         )
     except Exception as e:
-        logger.error(f"Failed updating __GLOBAL_METRICS__: {str(e)}")
+        logger.error(f"Failed updating GLOBAL/METRICS: {str(e)}")
 
 
 def lambda_handler(event, context):
@@ -93,7 +91,7 @@ def lambda_handler(event, context):
     if not messages_to_process:
         return {"batchItemFailures": batch_item_failures}
 
-    # Fetch active sender policies
+    # Fetch active sender policies using composite keys
     policy_map = get_policies_for_senders(distinct_senders)
 
     # Filter messages whose active policy is 'DELETE'
@@ -151,20 +149,28 @@ def get_policies_for_senders(senders):
     if not senders:
         return {}
 
-    keys = [{"sender_address": s} for s in senders]
+    keys = [{"PK": f"USER#{TENANT_EMAIL}", "SK": f"SENDER#{s}"} for s in senders]
+
     try:
         response = dynamodb.batch_get_item(
             RequestItems={
-                RULES_TABLE_NAME: {
+                TABLE_NAME: {
                     "Keys": keys,
-                    "ProjectionExpression": "sender_address, active_policy",
+                    "ProjectionExpression": "SK, active_policy",
                 }
             }
         )
-        items = response.get("Responses", {}).get(RULES_TABLE_NAME, [])
-        return {
-            item["sender_address"]: item.get("active_policy", "ALLOW") for item in items
-        }
+        items = response.get("Responses", {}).get(TABLE_NAME, [])
+
+        # Map SK back to the sender_address (strip "SENDER#" prefix)
+        policy_map = {}
+        for item in items:
+            sk = item.get("SK", "")
+            if sk.startswith("SENDER#"):
+                sender_addr = sk.replace("SENDER#", "", 1)
+                policy_map[sender_addr] = item.get("active_policy", "ALLOW")
+
+        return policy_map
     except Exception as e:
         logger.error(f"Error batch fetching policies: {str(e)}")
         return {}
