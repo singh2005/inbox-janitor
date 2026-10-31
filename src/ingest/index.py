@@ -15,16 +15,13 @@ dynamodb = boto3.resource("dynamodb")
 secrets_client = boto3.client("secretsmanager")
 sqs_client = boto3.client("sqs")
 
-LOGS_TABLE_NAME = os.environ.get("LOGS_TABLE", "inbox-janitor-raw-email-logs-tf")
-RULES_TABLE_NAME = os.environ.get(
-    "RULES_TABLE", "inbox-janitor-active-routing-rules-tf"
-)
+TABLE_NAME = os.environ.get("MULTI_TABLE_NAME", "inbox-janitor-multitenant-rules-tf")
 SECRET_ARN = os.environ.get("SECRET_ARN")
 GCP_PUBSUB_TOPIC = os.environ.get("GCP_PUBSUB_TOPIC")
 ENFORCE_QUEUE_URL = os.environ.get("ENFORCE_QUEUE_URL")
+TENANT_EMAIL = os.environ.get("TENANT_EMAIL", "singh2005@gmail.com")
 
-LOGS_TABLE = dynamodb.Table(LOGS_TABLE_NAME)
-RULES_TABLE = dynamodb.Table(RULES_TABLE_NAME)
+MULTI_TABLE = dynamodb.Table(TABLE_NAME)
 
 # 45-day retention in seconds (45 * 24 * 60 * 60)
 TTL_RETENTION_SECONDS = 3888000
@@ -43,7 +40,9 @@ def check_and_renew_gmail_watch(service):
     renew_buffer_ms = 24 * 60 * 60 * 1000  # 24 hours in milliseconds
 
     try:
-        resp = RULES_TABLE.get_item(Key={"sender_address": "__SYSTEM_STATE__"})
+        resp = MULTI_TABLE.get_item(
+            Key={"PK": f"USER#{TENANT_EMAIL}", "SK": "SYSTEM_STATE"}
+        )
         raw_exp = resp["Item"].get("watch_expiration_ms") if "Item" in resp else None
         current_expiration = int(raw_exp) if raw_exp is not None else None
 
@@ -60,8 +59,8 @@ def check_and_renew_gmail_watch(service):
 
         logger.info(f"Gmail Watch Renewed! New Expiration MS: {new_expiration_ms}")
 
-        RULES_TABLE.update_item(
-            Key={"sender_address": "__SYSTEM_STATE__"},
+        MULTI_TABLE.update_item(
+            Key={"PK": f"USER#{TENANT_EMAIL}", "SK": "SYSTEM_STATE"},
             UpdateExpression="SET watch_expiration_ms = :exp, updated_at = :ua",
             ExpressionAttributeValues={
                 ":exp": new_expiration_ms,
@@ -88,7 +87,9 @@ def get_google_credentials():
 
 def get_last_history_id():
     try:
-        resp = RULES_TABLE.get_item(Key={"sender_address": "__SYSTEM_STATE__"})
+        resp = MULTI_TABLE.get_item(
+            Key={"PK": f"USER#{TENANT_EMAIL}", "SK": "SYSTEM_STATE"}
+        )
         if "Item" in resp:
             val = resp["Item"].get("last_history_id")
             return str(val) if val is not None else None
@@ -102,8 +103,8 @@ def save_last_history_id(incoming_history_id):
         numeric_id = int(incoming_history_id)
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        RULES_TABLE.update_item(
-            Key={"sender_address": "__SYSTEM_STATE__"},
+        MULTI_TABLE.update_item(
+            Key={"PK": f"USER#{TENANT_EMAIL}", "SK": "SYSTEM_STATE"},
             UpdateExpression="SET last_history_id = :new_id, updated_at = :ua",
             ConditionExpression="attribute_not_exists(last_history_id) OR last_history_id < :new_id",
             ExpressionAttributeValues={
@@ -111,7 +112,9 @@ def save_last_history_id(incoming_history_id):
                 ":ua": now_iso,
             },
         )
-        logger.info(f"Successfully updated __SYSTEM_STATE__ cursor to {numeric_id}")
+        logger.info(
+            f"Successfully updated USER#{TENANT_EMAIL} SYSTEM_STATE cursor to {numeric_id}"
+        )
     except boto3.client("dynamodb").exceptions.ConditionalCheckFailedException:
         logger.info(
             f"Skipped updating last_history_id to {incoming_history_id} (superseded"
@@ -187,7 +190,7 @@ def lambda_handler(event, context):
 
     if not last_history_id:
         logger.info(
-            "No previous cursor found in DynamoDB. Initializing __SYSTEM_STATE__"
+            f"No previous cursor found in DynamoDB. Initializing USER#{TENANT_EMAIL} SYSTEM_STATE"
             f" to {pubsub_history_id}"
         )
         save_last_history_id(pubsub_history_id)
@@ -283,11 +286,12 @@ def process_single_message(service, msg_id):
         now_epoch = int(time.time())
         ttl_timestamp = now_epoch + TTL_RETENTION_SECONDS
 
-        LOGS_TABLE.put_item(
+        MULTI_TABLE.put_item(
             Item={
-                "sender_address": sender_address,
-                "timestamp_message_id": sort_key,
+                "PK": f"USER#{TENANT_EMAIL}#SENDER#{sender_address}",
+                "SK": f"LOG#{sort_key}",
                 "message_id": msg_id,
+                "sender_address": sender_address,
                 "sender_name": sender_name,
                 "subject": subject,
                 "status": status,
@@ -304,9 +308,12 @@ def process_single_message(service, msg_id):
 
 def evaluate_and_update_policies(processed_senders):
     for address in processed_senders:
-        query_resp = LOGS_TABLE.query(
-            KeyConditionExpression="sender_address = :sa",
-            ExpressionAttributeValues={":sa": address},
+        query_resp = MULTI_TABLE.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :sk_prefix)",
+            ExpressionAttributeValues={
+                ":pk": f"USER#{TENANT_EMAIL}#SENDER#{address}",
+                ":sk_prefix": "LOG#",
+            },
             ScanIndexForward=False,
             Limit=6,
         )
@@ -319,10 +326,10 @@ def evaluate_and_update_policies(processed_senders):
         sender_name = items[0].get("sender_name", "Unknown") if items else "Unknown"
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        RULES_TABLE.update_item(
-            Key={"sender_address": address},
+        MULTI_TABLE.update_item(
+            Key={"PK": f"USER#{TENANT_EMAIL}", "SK": f"SENDER#{address}"},
             UpdateExpression=(
-                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le "
+                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le, sender_address = :sa "
                 "REMOVE trashed_count, entity_type"
             ),
             ExpressionAttributeValues={
@@ -330,6 +337,7 @@ def evaluate_and_update_policies(processed_senders):
                 ":us": f"{unread_count}/{total_sampled}",
                 ":ap": policy,
                 ":le": now_iso,
+                ":sa": address,
             },
         )
         logger.info(
