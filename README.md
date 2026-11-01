@@ -12,6 +12,7 @@ An event-driven, cloud-native inbox management engine that automatically identif
   <img src="https://img.shields.io/badge/dynamic/json?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/stats.json&query=$.space_recovered&label=Space%20Recovered&color=success" alt="Space Recovered" />
   <img src="https://img.shields.io/badge/dynamic/json?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/stats.json&query=$.last_updated&label=Last%20Updated&color=informational" alt="Last Updated" />
 </p>
+
 ---
 
 ## What Inbox Janitor Offers
