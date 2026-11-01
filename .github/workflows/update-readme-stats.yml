@@ -87,14 +87,10 @@ jobs:
           GIST_ID: ${{ secrets.STATS_GIST_ID }}
         run: |
           STATS_CONTENT=$(cat stats.json)
-
-          # Updates stats.json while explicitly sending null to delete legacy files from Gist
           PAYLOAD=$(jq -n \
             --arg stats "$STATS_CONTENT" \
             '{files: {
-              "stats.json": {content: $stats},
-              "total_badge.json": null,
-              "storage_badge.json": null
+              "stats.json": {content: $stats}
             }}')
 
           curl -s -X PATCH \
