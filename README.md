@@ -6,13 +6,12 @@ An event-driven, cloud-native inbox management engine that automatically identif
 
 ## 📊 Pipeline Impact Statistics
 
-<!-- Mental Clutter Index Badge -->
 ![Mental Clutter Index](https://img.shields.io/badge/dynamic/json?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/stats.json&query=$.clutter_index&label=Mental%20Clutter%20Index&color=orange)
-<!-- Emails Trashed Badge -->
+
 ![Emails Trashed](https://img.shields.io/badge/dynamic/json?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/stats.json&query=$.total_trashed&label=Emails%20Trashed&color=blue)
-<!-- Space Recovered Badge -->
+
 ![Space Recovered](https://img.shields.io/badge/dynamic/json?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/stats.json&query=$.space_recovered&label=Space%20Recovered&color=success)
-<!-- Last Updated Badge -->
+
 ![Last Updated](https://img.shields.io/badge/dynamic/json?url=https://gist.githubusercontent.com/singh2005/f96228287f159d6c7a91d889c645d9bf/raw/stats.json&query=$.last_updated&label=Last%20Updated&color=informational)
 ---
 
