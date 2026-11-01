@@ -47,20 +47,32 @@ jobs:
           # Fetch Global Metrics using PK/SK composite keys
           resp_global = rules_table.get_item(Key={'PK': 'GLOBAL', 'SK': 'METRICS'})
           item = resp_global.get('Item', {})
-          total_trashed = item.get('total_trashed', 0)
-          total_bytes = item.get('total_bytes_trashed', 0)
+          
+          total_trashed = int(item.get('total_trashed', 0))
+          total_incoming = int(item.get('total_incoming_emails', 0))
+          total_bytes = int(item.get('total_bytes_trashed', 0))
 
+          # Dynamic volume-based Clutter Index calculation
+          if total_incoming > 0:
+              clutter_pct = (total_trashed / total_incoming) * 100
+              clutter_index_display = f"{clutter_pct:.1f}%"
+          else:
+              clutter_index_display = "0.0%"
+
+          # Format storage display
           if total_bytes >= 1073741824:
               storage_display = f"{total_bytes / 1073741824:.2f} GB"
           else:
               storage_display = f"{total_bytes / 1048576:.1f} MB"
 
-          # Generate current UTC timestamp (e.g., "Oct 30, 06:15 UTC")
+          # Generate current UTC timestamp (e.g., "Nov 01, 06:15 UTC")
           last_updated = datetime.now(timezone.utc).strftime("%b %d, %H:%M UTC")
 
           # Single flat payload for Shields.io dynamic JSON queries
           stats_payload = {
               'total_trashed': f"{total_trashed:,}",
+              'total_incoming': f"{total_incoming:,}",
+              'clutter_index': clutter_index_display,
               'space_recovered': storage_display,
               'last_updated': last_updated
           }
