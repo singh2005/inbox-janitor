@@ -53,28 +53,29 @@ def get_google_credentials(tenant_email):
         raise e
 
 
-def update_enforcement_metrics(tenant_email, trashed_count, bytes_trashed):
+def update_global_metrics(total_trashed_count, total_bytes_trashed):
     """
-    Atomically updates total_trashed counters for both tenant-specific and global telemetry records.
+    Atomic update for global metrics summary targeting PK = GLOBAL, SK = METRICS.
     """
-    if trashed_count <= 0:
+    if total_trashed_count <= 0:
         return
 
-    for pk in [f"USER#{tenant_email}", "GLOBAL"]:
-        try:
-            MULTI_TABLE.update_item(
-                Key={"PK": pk, "SK": "METRICS"},
-                UpdateExpression="ADD total_trashed :c, total_bytes_trashed :b",
-                ExpressionAttributeValues={
-                    ":c": trashed_count,
-                    ":b": bytes_trashed,
-                },
-            )
-            logger.info(
-                f"Updated {pk}/METRICS: +{trashed_count} emails, +{bytes_trashed} bytes"
-            )
-        except Exception as e:
-            logger.error(f"Failed updating METRICS for {pk}: {str(e)}")
+    try:
+        MULTI_TABLE.update_item(
+            Key={"PK": "GLOBAL", "SK": "METRICS"},
+            UpdateExpression="ADD total_trashed :c, total_bytes_trashed :b",
+            ExpressionAttributeValues={
+                ":c": total_trashed_count,
+                ":b": total_bytes_trashed,
+            },
+        )
+        mb_saved = total_bytes_trashed / (1024 * 1024)
+        logger.info(
+            f"Updated GLOBAL/METRICS by +{total_trashed_count} emails, "
+            f"+{total_bytes_trashed} bytes ({mb_saved:.2f} MB)"
+        )
+    except Exception as e:
+        logger.error(f"Failed updating GLOBAL/METRICS: {str(e)}")
 
 
 def get_policies_for_senders(tenant_email, senders):
@@ -137,6 +138,7 @@ def lambda_handler(event, context):
             batch_item_failures.append({"itemIdentifier": sqs_msg_id})
 
     total_trashed_overall = 0
+    total_bytes_trashed_overall = 0
 
     # Process per tenant
     for tenant_email, messages in tenant_messages.items():
@@ -176,19 +178,10 @@ def lambda_handler(event, context):
                     service.users().messages().batchModify(
                         userId="me", body=body
                     ).execute()
-
-                    chunk_trashed_count = len(chunk_ids)
-                    chunk_bytes_trashed = sum(
+                    total_trashed_overall += len(chunk_ids)
+                    total_bytes_trashed_overall += sum(
                         msg.get("size_bytes", 0) for msg in chunk_msgs
                     )
-
-                    # Update atomic metrics immediately for active tenant & global
-                    update_enforcement_metrics(
-                        tenant_email, chunk_trashed_count, chunk_bytes_trashed
-                    )
-
-                    total_trashed_overall += chunk_trashed_count
-
                 except Exception as e:
                     logger.error(
                         f"Error during batchModify execution for tenant {tenant_email}: {str(e)}"
@@ -203,6 +196,9 @@ def lambda_handler(event, context):
             )
             for msg in messages_to_trash:
                 batch_item_failures.append({"itemIdentifier": msg["_sqs_message_id"]})
+
+    if total_trashed_overall > 0:
+        update_global_metrics(total_trashed_overall, total_bytes_trashed_overall)
 
     logger.info(
         f"=== Enforcement Complete. Successfully trashed {total_trashed_overall} messages overall. Failures: {len(batch_item_failures)} ==="

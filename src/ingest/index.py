@@ -363,12 +363,11 @@ def evaluate_and_update_policies(tenant_email, processed_senders):
         total_sampled = len(items)
         unread_count = sum(1 for item in items if item.get("status") == "UNREAD")
 
-        new_policy = "DELETE" if (total_sampled == 6 and unread_count == 6) else "ALLOW"
+        policy = "DELETE" if (total_sampled == 6 and unread_count == 6) else "ALLOW"
         sender_name = items[0].get("sender_name", "Unknown") if items else "Unknown"
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        # Atomic update returning pre-existing attributes to evaluate state delta
-        update_resp = MULTI_TABLE.update_item(
+        MULTI_TABLE.update_item(
             Key={"PK": f"USER#{tenant_email}", "SK": f"SENDER#{address}"},
             UpdateExpression=(
                 "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le, sender_address = :sa "
@@ -377,79 +376,14 @@ def evaluate_and_update_policies(tenant_email, processed_senders):
             ExpressionAttributeValues={
                 ":sn": sender_name,
                 ":us": f"{unread_count}/{total_sampled}",
-                ":ap": new_policy,
+                ":ap": policy,
                 ":le": now_iso,
                 ":sa": address,
             },
-            ReturnValues="ALL_OLD",
         )
-
-        old_item = update_resp.get("Attributes", {})
-        old_policy = old_item.get("active_policy")
-
-        delta_senders = 0
-        delta_delete = 0
-        delta_allow = 0
-
-        if not old_item:
-            # New sender discovered
-            delta_senders = 1
-            if new_policy == "DELETE":
-                delta_delete = 1
-            else:
-                delta_allow = 1
-        else:
-            # Policy transition check between ALLOW <-> DELETE
-            if old_policy != "DELETE" and new_policy == "DELETE":
-                delta_delete = 1
-                delta_allow = -1
-            elif old_policy == "DELETE" and new_policy != "DELETE":
-                delta_delete = -1
-                delta_allow = 1
-
-        if delta_senders != 0 or delta_delete != 0 or delta_allow != 0:
-            apply_metric_deltas(tenant_email, delta_senders, delta_delete, delta_allow)
-
         logger.info(
-            f"Tenant: {tenant_email} | Sender: {address} | Window: {unread_count}/{total_sampled} UNREAD | Policy: {new_policy}"
+            f"Tenant: {tenant_email} | Sender: {address} | Window: {unread_count}/{total_sampled} UNREAD | Policy: {policy}"
         )
-
-
-def apply_metric_deltas(tenant_email, delta_senders, delta_delete, delta_allow):
-    """
-    Atomically updates sender counters on both Tenant and Global METRICS records
-    and recalculates the Mental Clutter Index string.
-    """
-    for pk in [f"USER#{tenant_email}", "GLOBAL"]:
-        try:
-            resp = MULTI_TABLE.update_item(
-                Key={"PK": pk, "SK": "METRICS"},
-                UpdateExpression="ADD total_senders :ds, total_delete_policies :dd, total_allow_policies :da",
-                ExpressionAttributeValues={
-                    ":ds": delta_senders,
-                    ":dd": delta_delete,
-                    ":da": delta_allow,
-                },
-                ReturnValues="ALL_NEW",
-            )
-
-            updated = resp.get("Attributes", {})
-            ts = int(updated.get("total_senders", 0))
-            dp = int(updated.get("total_delete_policies", 0))
-
-            if ts > 0:
-                new_ci = f"{(dp / ts * 100):.2f}"
-                MULTI_TABLE.update_item(
-                    Key={"PK": pk, "SK": "METRICS"},
-                    UpdateExpression="SET clutter_index = :ci",
-                    ExpressionAttributeValues={":ci": new_ci},
-                )
-
-            logger.info(
-                f"Updated METRICS ({pk}): Senders={delta_senders:+d}, Delete={delta_delete:+d}, Allow={delta_allow:+d}"
-            )
-        except Exception as e:
-            logger.error(f"Failed updating METRICS for {pk}: {str(e)}")
 
 
 def get_tenant_param_name(tenant_email):
