@@ -21,18 +21,11 @@ ENFORCE_QUEUE_URL = os.environ.get("ENFORCE_QUEUE_URL")
 DEFAULT_TENANT_EMAIL = os.environ.get("TENANT_EMAIL", "singh2005@gmail.com")
 
 MULTI_TABLE = dynamodb.Table(TABLE_NAME)
-
-# 45-day retention in seconds (45 * 24 * 60 * 60)
 TTL_RETENTION_SECONDS = 3888000
-
-# Cache tenant credentials across warm Lambda container invocations
 CREDENTIALS_CACHE = {}
 
 
 def get_google_credentials(tenant_email):
-    """
-    Dynamically retrieves and caches tenant OAuth credentials from SSM Parameter Store.
-    """
     if tenant_email in CREDENTIALS_CACHE:
         return CREDENTIALS_CACHE[tenant_email]
 
@@ -62,15 +55,12 @@ def get_google_credentials(tenant_email):
 
 
 def check_and_renew_gmail_watch(service, tenant_email):
-    """
-    Renews the Gmail watch subscription only if it's missing or expiring within 24 hours.
-    """
     if not GCP_PUBSUB_TOPIC:
         logger.error("GCP_PUBSUB_TOPIC environment variable is not set!")
         return
 
     now_ms = int(time.time() * 1000)
-    renew_buffer_ms = 24 * 60 * 60 * 1000  # 24 hours in milliseconds
+    renew_buffer_ms = 24 * 60 * 60 * 1000
 
     try:
         resp = MULTI_TABLE.get_item(
@@ -80,19 +70,12 @@ def check_and_renew_gmail_watch(service, tenant_email):
         current_expiration = int(raw_exp) if raw_exp is not None else None
 
         if current_expiration and (current_expiration - now_ms > renew_buffer_ms):
-            logger.info(
-                f"Gmail Watch active for {tenant_email}. Expiration in "
-                f"{(int(current_expiration) - now_ms) // (1000 * 3600)}h. Skipping renew."
-            )
+            logger.info(f"Gmail Watch active for {tenant_email}. Skipping renew.")
             return
 
         request_body = {"topicName": GCP_PUBSUB_TOPIC}
         response = service.users().watch(userId="me", body=request_body).execute()
         new_expiration_ms = int(response.get("expiration", 0))
-
-        logger.info(
-            f"Gmail Watch Renewed for {tenant_email}! New Expiration MS: {new_expiration_ms}"
-        )
 
         MULTI_TABLE.update_item(
             Key={"PK": f"USER#{tenant_email}", "SK": "SYSTEM_STATE"},
@@ -103,9 +86,7 @@ def check_and_renew_gmail_watch(service, tenant_email):
             },
         )
     except Exception as e:
-        logger.error(
-            f"Failed during check_and_renew_gmail_watch for {tenant_email}: {str(e)}"
-        )
+        logger.error(f"Failed renew_gmail_watch for {tenant_email}: {str(e)}")
 
 
 def get_last_history_id(tenant_email):
@@ -117,9 +98,7 @@ def get_last_history_id(tenant_email):
             val = resp["Item"].get("last_history_id")
             return str(val) if val is not None else None
     except Exception as e:
-        logger.warning(
-            f"Could not read last_history_id cursor for {tenant_email}: {str(e)}"
-        )
+        logger.warning(f"Could not read last_history_id for {tenant_email}: {str(e)}")
     return None
 
 
@@ -137,13 +116,6 @@ def save_last_history_id(tenant_email, incoming_history_id):
                 ":ua": now_iso,
             },
         )
-        logger.info(
-            f"Successfully updated USER#{tenant_email} SYSTEM_STATE cursor to {numeric_id}"
-        )
-    except boto3.client("dynamodb").exceptions.ConditionalCheckFailedException:
-        logger.info(
-            f"Skipped updating last_history_id for {tenant_email} to {incoming_history_id} (superseded)."
-        )
     except Exception as e:
         logger.error(f"Failed saving last_history_id for {tenant_email}: {str(e)}")
 
@@ -154,7 +126,6 @@ def enqueue_enforce_records(tenant_email, message_pairs):
 
     entries = []
     for idx, pair in enumerate(message_pairs):
-        # Attach tenant_email context into every SQS payload
         payload = {
             "tenant_email": tenant_email,
             "message_id": pair["message_id"],
@@ -173,17 +144,31 @@ def enqueue_enforce_records(tenant_email, message_pairs):
     for i in range(0, len(entries), 10):
         batch_chunk = entries[i : i + 10]
         try:
-            response = sqs_client.send_message_batch(
+            sqs_client.send_message_batch(
                 QueueUrl=ENFORCE_QUEUE_URL, Entries=batch_chunk
-            )
-            logger.info(
-                f"Enqueued {len(batch_chunk)} record(s) to SQS for {tenant_email}. Failed count:"
-                f" {len(response.get('Failed', []))}"
             )
         except Exception as e:
             logger.error(
                 f"Failed pushing batch chunk to SQS for {tenant_email}: {str(e)}"
             )
+
+
+def increment_incoming_count(tenant_email, count=1):
+    """
+    Atomically increments total_incoming_emails counter on tenant and global metrics.
+    """
+    if count <= 0:
+        return
+
+    for pk in [f"USER#{tenant_email}", "GLOBAL"]:
+        try:
+            MULTI_TABLE.update_item(
+                Key={"PK": pk, "SK": "METRICS"},
+                UpdateExpression="ADD total_incoming_emails :c",
+                ExpressionAttributeValues={":c": count},
+            )
+        except Exception as e:
+            logger.error(f"Failed incrementing incoming count for {pk}: {str(e)}")
 
 
 def lambda_handler(event, context):
@@ -202,10 +187,6 @@ def lambda_handler(event, context):
                 extracted_email = pubsub_event.get("emailAddress")
                 if extracted_email:
                     tenant_email = extracted_email
-
-                logger.info(
-                    f"Received Pub/Sub Push for account: {tenant_email} | History ID: {pubsub_history_id}"
-                )
         except Exception as e:
             logger.warning(f"Could not parse body as Pub/Sub payload: {str(e)}")
 
@@ -214,7 +195,6 @@ def lambda_handler(event, context):
     check_and_renew_gmail_watch(service, tenant_email)
 
     if not pubsub_history_id:
-        logger.info("No historyId present in payload. Skipping sync pass.")
         return {
             "statusCode": 200,
             "body": json.dumps("No historyId found; pass skipped."),
@@ -224,17 +204,9 @@ def lambda_handler(event, context):
     new_message_pairs = []
 
     last_history_id = get_last_history_id(tenant_email)
-
     if not last_history_id:
-        logger.info(
-            f"No previous cursor found in DynamoDB. Initializing USER#{tenant_email} SYSTEM_STATE to {pubsub_history_id}"
-        )
         save_last_history_id(tenant_email, pubsub_history_id)
         return {"statusCode": 200, "body": json.dumps("Initialized system cursor.")}
-
-    logger.info(
-        f"Fetching history records for {tenant_email} starting from History ID: {last_history_id}"
-    )
 
     try:
         history_response = (
@@ -245,9 +217,7 @@ def lambda_handler(event, context):
         )
 
         history_records = history_response.get("history", [])
-        logger.info(
-            f"Retrieved {len(history_records)} history record(s) for {tenant_email}."
-        )
+        new_incoming_count = 0
 
         for record in history_records:
             if "messagesAdded" in record:
@@ -265,6 +235,7 @@ def lambda_handler(event, context):
                                 "size_bytes": size_bytes,
                             }
                         )
+                        new_incoming_count += 1
 
             for label_event in record.get("labelsRemoved", []) + record.get(
                 "labelsAdded", []
@@ -273,6 +244,10 @@ def lambda_handler(event, context):
                 sender, _ = process_single_message(service, tenant_email, msg_id)
                 if sender:
                     processed_senders.add(sender)
+
+        # Direct increment for new messages added in this pass
+        if new_incoming_count > 0:
+            increment_incoming_count(tenant_email, count=new_incoming_count)
 
         save_last_history_id(tenant_email, pubsub_history_id)
 
@@ -297,6 +272,7 @@ def process_single_message(service, tenant_email, msg_id):
             .get(userId="me", id=msg_id, format="metadata")
             .execute()
         )
+
         headers = {
             h["name"]: h["value"] for h in detail.get("payload", {}).get("headers", [])
         }
@@ -310,7 +286,6 @@ def process_single_message(service, tenant_email, msg_id):
 
         label_ids = detail.get("labelIds", [])
         status = "UNREAD" if "UNREAD" in label_ids else "READ"
-
         raw_size = detail.get("sizeEstimate")
         size_bytes = int(raw_size) if raw_size is not None else 0
 
@@ -321,9 +296,7 @@ def process_single_message(service, tenant_email, msg_id):
             .replace("+00:00", "Z")
         )
         sort_key = f"{iso_timestamp}#{msg_id}"
-
-        now_epoch = int(time.time())
-        ttl_timestamp = now_epoch + TTL_RETENTION_SECONDS
+        ttl_timestamp = int(time.time()) + TTL_RETENTION_SECONDS
 
         MULTI_TABLE.put_item(
             Item={
@@ -337,9 +310,6 @@ def process_single_message(service, tenant_email, msg_id):
                 "timestamp": iso_timestamp,
                 "ttl_timestamp": ttl_timestamp,
             }
-        )
-        logger.info(
-            f"Upserted DynamoDB record for {sender_address} ({tenant_email}) | Status: {status}"
         )
         return sender_address, size_bytes
     except Exception as e:
@@ -381,15 +351,8 @@ def evaluate_and_update_policies(tenant_email, processed_senders):
                 ":sa": address,
             },
         )
-        logger.info(
-            f"Tenant: {tenant_email} | Sender: {address} | Window: {unread_count}/{total_sampled} UNREAD | Policy: {policy}"
-        )
 
 
 def get_tenant_param_name(tenant_email):
-    """
-    Converts raw tenant email to a valid SSM Parameter Store path.
-    Example: singh2005@gmail.com -> /inbox-janitor/tenants/singh2005-at-gmail-com/credentials
-    """
     sanitized_id = tenant_email.replace("@", "-at-").replace(".", "-")
     return f"/inbox-janitor/tenants/{sanitized_id}/credentials"
