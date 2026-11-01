@@ -191,7 +191,7 @@ def lambda_handler(event, context):
             logger.warning(f"Could not parse body as Pub/Sub payload: {str(e)}")
 
     creds = get_google_credentials(tenant_email)
-    service = build("gmail", "v1", credentials=creds)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
     check_and_renew_gmail_watch(service, tenant_email)
 
     if not pubsub_history_id:
@@ -350,6 +350,9 @@ def evaluate_and_update_policies(tenant_email, processed_senders):
                 ":le": now_iso,
                 ":sa": address,
             },
+        )
+        logger.info(
+            f"Tenant: {tenant_email} | Sender: {address} | Window: {unread_count}/{total_sampled} UNREAD | Policy: {policy}"
         )
 
 
