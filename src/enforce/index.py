@@ -16,7 +16,6 @@ TABLE_NAME = os.environ.get("MULTI_TABLE_NAME", "inbox-janitor-multitenant-rules
 DEFAULT_TENANT_EMAIL = os.environ.get("TENANT_EMAIL", "singh2005@gmail.com")
 
 MULTI_TABLE = dynamodb.Table(TABLE_NAME)
-
 CREDENTIALS_CACHE = {}
 
 
@@ -28,8 +27,8 @@ def get_google_credentials(tenant_email):
     logger.info(f"Fetching SSM SecureString parameter for: {param_name}")
 
     try:
-        response = ssm_client.get_parameter(Name=param_name, WithDecryption=True)
-        secret_json = json.loads(response["Parameter"]["Value"])
+        ssm_param = ssm_client.get_parameter(Name=param_name, WithDecryption=True)
+        secret_json = json.loads(ssm_param["Parameter"]["Value"])
         scopes = ["https://www.googleapis.com/auth/gmail.modify"]
 
         creds = Credentials(

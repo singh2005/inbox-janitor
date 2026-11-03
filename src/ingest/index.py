@@ -1,4 +1,3 @@
-import base64
 from datetime import datetime, timezone
 import json
 import logging
@@ -74,8 +73,8 @@ def check_and_renew_gmail_watch(service, tenant_email):
             return
 
         request_body = {"topicName": GCP_PUBSUB_TOPIC}
-        response = service.users().watch(userId="me", body=request_body).execute()
-        new_expiration_ms = int(response.get("expiration", 0))
+        watch_resp = service.users().watch(userId="me", body=request_body).execute()
+        new_expiration_ms = int(watch_resp.get("expiration", 0))
 
         MULTI_TABLE.update_item(
             Key={"PK": f"USER#{tenant_email}", "SK": "SYSTEM_STATE"},
@@ -246,7 +245,6 @@ def lambda_handler(event, context):
         new_incoming_count = 0
 
         for h_record in history_records:
-            # ONLY populate new_message_pairs for true discrete message additions
             if "messagesAdded" in h_record:
                 for item in h_record["messagesAdded"]:
                     msg_id = item["message"]["id"]
@@ -264,7 +262,6 @@ def lambda_handler(event, context):
                         )
                         new_incoming_count += 1
 
-            # Process label events strictly to update DynamoDB log records and metrics
             for label_event in h_record.get("labelsRemoved", []) + h_record.get(
                 "labelsAdded", []
             ):
@@ -276,7 +273,6 @@ def lambda_handler(event, context):
         if new_incoming_count > 0:
             increment_incoming_count(tenant_email, count=new_incoming_count)
 
-        # Restore original cursor save directly after processing the history loop
         save_last_history_id(tenant_email, pubsub_history_id)
 
     except Exception as e:
@@ -368,8 +364,7 @@ def evaluate_and_update_policies(tenant_email, processed_senders):
         MULTI_TABLE.update_item(
             Key={"PK": f"USER#{tenant_email}", "SK": f"SENDER#{address}"},
             UpdateExpression=(
-                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le, sender_address = :sa "
-                "REMOVE trashed_count, entity_type"
+                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le, sender_address = :sa"
             ),
             ExpressionAttributeValues={
                 ":sn": sender_name,
