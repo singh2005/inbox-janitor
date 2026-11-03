@@ -172,124 +172,99 @@ def increment_incoming_count(tenant_email, count=1):
             logger.error(f"Failed incrementing incoming count for {pk}: {str(e)}")
 
 
-def parse_sqs_record(record):
-    """
-    Parses SQS record originating from API Gateway -> Ingress SQS -> Router -> Ingest.
-    Extracts tenant_email, historyId, and is_canary flag.
-    """
-    body_str = record.get("body", "{}")
-    body = json.loads(body_str) if isinstance(body_str, str) else body_str
-
-    # Extract top-level fields injected by Router Lambda / API Gateway payload
+def parse_router_payload(event):
     tenant_email = (
-        body.get("emailAddress") or body.get("tenant_email") or DEFAULT_TENANT_EMAIL
+        event.get("emailAddress")
+        or event.get("tenant_email")
+        or event.get("email")
+        or DEFAULT_TENANT_EMAIL
     )
-    pubsub_history_id = body.get("historyId")
-    is_canary = body.get("is_canary", False)
-
-    # If payload contains base64-encoded GCP Pub/Sub data wrapper
-    if not pubsub_history_id and "message" in body and "data" in body["message"]:
-        try:
-            decoded_data = base64.b64decode(body["message"]["data"]).decode("utf-8")
-            pubsub_event = json.loads(decoded_data)
-            pubsub_history_id = pubsub_event.get("historyId")
-            if pubsub_event.get("emailAddress"):
-                tenant_email = pubsub_event.get("emailAddress")
-        except Exception as e:
-            logger.warning(f"Could not decode nested Pub/Sub message data: {str(e)}")
+    pubsub_history_id = event.get("historyId")
+    is_canary = event.get("is_canary", False)
 
     return tenant_email, pubsub_history_id, is_canary
 
 
 def lambda_handler(event, context):
-    logger.info(f"=== Received SQS Event: {json.dumps(event)} ===")
+    logger.info(f"=== Received Event from Router: {json.dumps(event)} ===")
 
-    records = event.get("Records", [])
-    if not records:
-        logger.warning("No SQS Records found in event execution. Exiting pass.")
-        return {"statusCode": 200, "body": json.dumps("No SQS records found.")}
+    tenant_email, pubsub_history_id, is_canary = parse_router_payload(event)
+    logger.info(
+        f"Target tenant: {tenant_email} | historyId: {pubsub_history_id} | is_canary: {is_canary}"
+    )
 
-    for record in records:
-        tenant_email, pubsub_history_id, is_canary = parse_sqs_record(record)
+    creds = get_google_credentials(tenant_email)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    check_and_renew_gmail_watch(service, tenant_email)
+
+    if not pubsub_history_id:
+        logger.info("No historyId present in payload. Skipping history sync.")
+        return {"statusCode": 200, "body": json.dumps("No historyId found.")}
+
+    processed_senders = set()
+    new_message_pairs = []
+
+    last_history_id = get_last_history_id(tenant_email)
+    if not last_history_id:
+        save_last_history_id(tenant_email, pubsub_history_id)
         logger.info(
-            f"Processing Record: tenant={tenant_email}, historyId={pubsub_history_id}, is_canary={is_canary}"
+            f"Initialized system cursor for {tenant_email} at historyId {pubsub_history_id}."
+        )
+        return {"statusCode": 200, "body": json.dumps("Initialized cursor.")}
+
+    try:
+        history_response = (
+            service.users()
+            .history()
+            .list(userId="me", startHistoryId=str(last_history_id))
+            .execute()
         )
 
-        creds = get_google_credentials(tenant_email)
-        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-        check_and_renew_gmail_watch(service, tenant_email)
+        history_records = history_response.get("history", [])
+        new_incoming_count = 0
 
-        if not pubsub_history_id:
-            logger.info("No historyId present in record. Skipping history sync.")
-            continue
-
-        processed_senders = set()
-        new_message_pairs = []
-
-        last_history_id = get_last_history_id(tenant_email)
-        if not last_history_id:
-            save_last_history_id(tenant_email, pubsub_history_id)
-            logger.info(
-                f"Initialized system cursor for {tenant_email} at historyId {pubsub_history_id}."
-            )
-            continue
-
-        try:
-            history_response = (
-                service.users()
-                .history()
-                .list(userId="me", startHistoryId=str(last_history_id))
-                .execute()
-            )
-
-            history_records = history_response.get("history", [])
-            new_incoming_count = 0
-
-            for h_record in history_records:
-                if "messagesAdded" in h_record:
-                    for item in h_record["messagesAdded"]:
-                        msg_id = item["message"]["id"]
-                        sender, size_bytes = process_single_message(
-                            service, tenant_email, msg_id
-                        )
-                        if sender:
-                            processed_senders.add(sender)
-                            new_message_pairs.append(
-                                {
-                                    "message_id": msg_id,
-                                    "sender_address": sender,
-                                    "size_bytes": size_bytes,
-                                }
-                            )
-                            new_incoming_count += 1
-
-                for label_event in h_record.get("labelsRemoved", []) + h_record.get(
-                    "labelsAdded", []
-                ):
-                    msg_id = label_event["message"]["id"]
-                    sender, _ = process_single_message(service, tenant_email, msg_id)
+        for h_record in history_records:
+            if "messagesAdded" in h_record:
+                for item in h_record["messagesAdded"]:
+                    msg_id = item["message"]["id"]
+                    sender, size_bytes = process_single_message(
+                        service, tenant_email, msg_id
+                    )
                     if sender:
                         processed_senders.add(sender)
+                        new_message_pairs.append(
+                            {
+                                "message_id": msg_id,
+                                "sender_address": sender,
+                                "size_bytes": size_bytes,
+                            }
+                        )
+                        new_incoming_count += 1
 
-            if new_incoming_count > 0:
-                increment_incoming_count(tenant_email, count=new_incoming_count)
+            for label_event in h_record.get("labelsRemoved", []) + h_record.get(
+                "labelsAdded", []
+            ):
+                msg_id = label_event["message"]["id"]
+                sender, _ = process_single_message(service, tenant_email, msg_id)
+                if sender:
+                    processed_senders.add(sender)
 
-            save_last_history_id(tenant_email, pubsub_history_id)
+        if new_incoming_count > 0:
+            increment_incoming_count(tenant_email, count=new_incoming_count)
 
-        except Exception as e:
-            logger.error(
-                f"Error querying Gmail History API for {tenant_email}: {str(e)}"
-            )
+        save_last_history_id(tenant_email, pubsub_history_id)
 
-        if processed_senders:
-            evaluate_and_update_policies(tenant_email, processed_senders)
+    except Exception as e:
+        logger.error(f"Error querying Gmail History API for {tenant_email}: {str(e)}")
 
-        if new_message_pairs:
-            enqueue_enforce_records(
-                tenant_email, new_message_pairs, is_canary=is_canary
-            )
+    if processed_senders:
+        evaluate_and_update_policies(tenant_email, processed_senders)
 
-    logger.info("=== Finished Inbox Janitor Ingest Execution Pass ===")
+    if new_message_pairs:
+        # Enqueues to Enforce SQS with is_canary flag
+        enqueue_enforce_records(tenant_email, new_message_pairs, is_canary=is_canary)
+
+    logger.info("=== Finished Ingest Execution Pass ===")
     return {"statusCode": 200, "body": json.dumps("Success")}
 
 
