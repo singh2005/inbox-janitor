@@ -113,6 +113,9 @@ def lambda_handler(event, context):
 
     batch_item_failures = []
     sqs_records = event.get("Records", [])
+    logger.info(
+        f"[ENFORCE TRACE] Received {len(sqs_records)} SQS Record(s) in event trigger."
+    )
 
     if not sqs_records:
         logger.info("No SQS Records in event payload. Exiting cleanly.")
@@ -123,6 +126,7 @@ def lambda_handler(event, context):
 
     for record in sqs_records:
         sqs_msg_id = record["messageId"]
+        attributes = record.get("attributes", {})
         try:
             body_str = record.get("body", "{}")
             payload = json.loads(body_str) if isinstance(body_str, str) else body_str
@@ -131,6 +135,12 @@ def lambda_handler(event, context):
                 payload["_sqs_message_id"] = sqs_msg_id
                 tenant_email = payload.get("tenant_email", DEFAULT_TENANT_EMAIL)
                 tenant_messages[tenant_email].append(payload)
+
+                logger.info(
+                    f"[ENFORCE TRACE] Record SQS_MsgId={sqs_msg_id} | "
+                    f"ApproxReceiveCount={attributes.get('ApproximateReceiveCount')} | "
+                    f"Body={payload}"
+                )
             else:
                 logger.warning(
                     f"Malformed payload in SQS message {sqs_msg_id}. Dropping."

@@ -126,6 +126,7 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
 
     entries = []
     for idx, pair in enumerate(message_pairs):
+        dedup_id = f"{tenant_email}_{pair['message_id']}"
         payload = {
             "tenant_email": tenant_email,
             "message_id": pair["message_id"],
@@ -133,11 +134,17 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
             "size_bytes": pair["size_bytes"],
             "is_canary": is_canary,
         }
+
+        logger.info(
+            f"[ENQUEUE TRACE] Preparing SQS Entry | Id={idx} | "
+            f"MessageId={pair['message_id']} | DedupId={dedup_id} | Sender={pair['sender_address']}"
+        )
+
         entries.append(
             {
                 "Id": str(idx),
                 "MessageBody": json.dumps(payload),
-                "MessageDeduplicationId": f"{tenant_email}_{pair['message_id']}",
+                "MessageDeduplicationId": dedup_id,
                 "MessageGroupId": f"gmail_enforce_{tenant_email}",
             }
         )
@@ -145,15 +152,29 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
     for i in range(0, len(entries), 10):
         batch_chunk = entries[i : i + 10]
         try:
-            sqs_client.send_message_batch(
+            response = sqs_client.send_message_batch(
                 QueueUrl=ENFORCE_QUEUE_URL, Entries=batch_chunk
             )
-            logger.info(
-                f"Pushed batch of {len(batch_chunk)} messages to Enforce SQS (is_canary={is_canary})."
-            )
+
+            # Log SQS response details
+            successful = response.get("Successful", [])
+            failed = response.get("Failed", [])
+
+            for s in successful:
+                logger.info(
+                    f"[ENQUEUE TRACE] SQS Accepted Entry Id={s['Id']} | "
+                    f"SQS_MsgId={s['MessageId']} | SequenceNumber={s.get('SequenceNumber')}"
+                )
+
+            for f in failed:
+                logger.error(
+                    f"[ENQUEUE TRACE] SQS REJECTED Entry Id={f['Id']} | "
+                    f"Code={f['Code']} | Message={f.get('Message')} | SenderFault={f.get('SenderFault')}"
+                )
+
         except Exception as e:
             logger.error(
-                f"Failed pushing batch chunk to SQS for {tenant_email}: {str(e)}"
+                f"[ENQUEUE TRACE] Exception pushing batch chunk to SQS for {tenant_email}: {str(e)}"
             )
 
 
