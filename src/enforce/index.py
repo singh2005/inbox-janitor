@@ -124,7 +124,9 @@ def lambda_handler(event, context):
     for record in sqs_records:
         sqs_msg_id = record["messageId"]
         try:
-            payload = json.loads(record["body"])
+            body_str = record.get("body", "{}")
+            payload = json.loads(body_str) if isinstance(body_str, str) else body_str
+
             if isinstance(payload, dict) and "message_id" in payload:
                 payload["_sqs_message_id"] = sqs_msg_id
                 tenant_email = payload.get("tenant_email", DEFAULT_TENANT_EMAIL)
@@ -142,21 +144,24 @@ def lambda_handler(event, context):
 
     # Process per tenant
     for tenant_email, messages in tenant_messages.items():
-        distinct_senders = {msg["sender_address"] for msg in messages}
+        distinct_senders = {
+            msg["sender_address"] for msg in messages if "sender_address" in msg
+        }
         policy_map = get_policies_for_senders(tenant_email, distinct_senders)
 
         messages_to_trash = [
             msg
             for msg in messages
-            if policy_map.get(msg["sender_address"], "ALLOW") == "DELETE"
+            if policy_map.get(msg.get("sender_address"), "ALLOW") == "DELETE"
         ]
 
         if not messages_to_trash:
+            logger.info(f"No messages marked for deletion for tenant {tenant_email}.")
             continue
 
         try:
             creds = get_google_credentials(tenant_email)
-            service = build("gmail", "v1", credentials=creds)
+            service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
             message_ids = [msg["message_id"] for msg in messages_to_trash]
             logger.info(
