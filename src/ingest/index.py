@@ -212,6 +212,9 @@ def lambda_handler(event, context):
         )
         return {"statusCode": 200, "body": json.dumps("Initialized cursor.")}
 
+    # Track target history ID to save (prefer Gmail response historyId)
+    target_history_id = pubsub_history_id
+
     try:
         history_response = (
             service.users()
@@ -220,6 +223,8 @@ def lambda_handler(event, context):
             .execute()
         )
 
+        # Capture the highest historyId returned by Gmail API
+        target_history_id = history_response.get("historyId", pubsub_history_id)
         history_records = history_response.get("history", [])
         new_incoming_count = 0
 
@@ -252,19 +257,22 @@ def lambda_handler(event, context):
         if new_incoming_count > 0:
             increment_incoming_count(tenant_email, count=new_incoming_count)
 
-        save_last_history_id(tenant_email, pubsub_history_id)
-
     except Exception as e:
         logger.error(f"Error querying Gmail History API for {tenant_email}: {str(e)}")
+        # Exit early so cursor is NOT updated if history fetch fails
+        return {"statusCode": 500, "body": json.dumps(f"History fetch error: {str(e)}")}
 
+    # Process policies and SQS enqueueing
     if processed_senders:
         evaluate_and_update_policies(tenant_email, processed_senders)
 
     if new_message_pairs:
-        # Enqueues to Enforce SQS with is_canary flag
         enqueue_enforce_records(tenant_email, new_message_pairs, is_canary=is_canary)
 
-    logger.info("=== Finished Ingest Execution Pass ===")
+    # ONLY save the history ID checkpoint after processing and enqueueing succeed!
+    save_last_history_id(tenant_email, target_history_id)
+
+    logger.info(f"=== Finished Ingest Pass. Updated cursor to {target_history_id} ===")
     return {"statusCode": 200, "body": json.dumps("Success")}
 
 
