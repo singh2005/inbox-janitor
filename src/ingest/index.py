@@ -244,6 +244,8 @@ def lambda_handler(event, context):
             .execute()
         )
 
+        logger.info(f"logging history_response >>> {json.dumps(history_response)}")
+
         # Capture the highest historyId returned by Gmail API
         target_history_id = history_response.get("historyId", pubsub_history_id)
         history_records = history_response.get("history", [])
