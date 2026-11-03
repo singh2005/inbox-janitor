@@ -22,16 +22,16 @@ resource "aws_apigatewayv2_integration" "sqs_ingress_integration" {
     MessageGroupId         = "gcp-pubsub-webhook"
     MessageDeduplicationId = "$context.requestId"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "post_gmail_event_route" {
   api_id    = aws_apigatewayv2_api.ingest_api.id
   route_key = "POST /gmail-event"
   target    = "integrations/${aws_apigatewayv2_integration.sqs_ingress_integration.id}"
-
-  depends_on = [
-    aws_apigatewayv2_integration.sqs_ingress_integration
-  ]
 }
 
 output "api_gateway_endpoint" {

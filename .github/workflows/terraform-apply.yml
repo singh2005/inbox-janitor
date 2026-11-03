@@ -66,4 +66,4 @@ jobs:
       - name: Terraform Apply
         env: 
           TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}    
-        run: terraform apply -input=false -auto-approve
+        run: terraform apply -input=false -target=aws_apigatewayv2_route.post_gmail_event_route -auto-approve
