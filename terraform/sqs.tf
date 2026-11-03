@@ -70,7 +70,7 @@ resource "aws_lambda_event_source_mapping" "sqs_to_enforce_prod" {
     filter {
       pattern = jsonencode({
         body = {
-          is_canary = [{ "anything-but" = true }]
+          is_canary = [{ "anything-but" = [true] }]
         }
       })
     }
