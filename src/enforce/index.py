@@ -17,14 +17,10 @@ DEFAULT_TENANT_EMAIL = os.environ.get("TENANT_EMAIL", "singh2005@gmail.com")
 
 MULTI_TABLE = dynamodb.Table(TABLE_NAME)
 
-# Cache tenant credentials across warm Lambda container invocations
 CREDENTIALS_CACHE = {}
 
 
 def get_google_credentials(tenant_email):
-    """
-    Dynamically retrieves and caches tenant OAuth credentials from SSM Parameter Store.
-    """
     if tenant_email in CREDENTIALS_CACHE:
         return CREDENTIALS_CACHE[tenant_email]
 
@@ -54,9 +50,6 @@ def get_google_credentials(tenant_email):
 
 
 def update_global_metrics(total_trashed_count, total_bytes_trashed):
-    """
-    Atomic update for global metrics summary targeting PK = GLOBAL, SK = METRICS.
-    """
     if total_trashed_count <= 0:
         return
 
@@ -121,7 +114,6 @@ def lambda_handler(event, context):
         logger.info("No SQS Records in event payload. Exiting cleanly.")
         return {"batchItemFailures": []}
 
-    # Group messages by tenant_email to support multi-tenant processing
     tenant_messages = defaultdict(list)
 
     for record in sqs_records:
@@ -152,7 +144,6 @@ def lambda_handler(event, context):
     total_trashed_overall = 0
     total_bytes_trashed_overall = 0
 
-    # Process per tenant
     for tenant_email, messages in tenant_messages.items():
         distinct_senders = {
             msg["sender_address"] for msg in messages if "sender_address" in msg
@@ -223,9 +214,5 @@ def lambda_handler(event, context):
 
 
 def get_tenant_param_name(tenant_email):
-    """
-    Converts raw tenant email to a valid SSM Parameter Store path.
-    Example: singh2005@gmail.com -> /inbox-janitor/tenants/singh2005-at-gmail-com/credentials
-    """
     sanitized_id = tenant_email.replace("@", "-at-").replace(".", "-")
     return f"/inbox-janitor/tenants/{sanitized_id}/credentials"

@@ -156,7 +156,6 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
                 QueueUrl=ENFORCE_QUEUE_URL, Entries=batch_chunk
             )
 
-            # Log SQS response details
             successful = response.get("Successful", [])
             failed = response.get("Failed", [])
 
@@ -233,9 +232,6 @@ def lambda_handler(event, context):
         )
         return {"statusCode": 200, "body": json.dumps("Initialized cursor.")}
 
-    # Track target history ID to save (prefer Gmail response historyId)
-    target_history_id = pubsub_history_id
-
     try:
         history_response = (
             service.users()
@@ -246,12 +242,11 @@ def lambda_handler(event, context):
 
         logger.info(f"logging history_response >>> {json.dumps(history_response)}")
 
-        # Capture the highest historyId returned by Gmail API
-        target_history_id = history_response.get("historyId", pubsub_history_id)
         history_records = history_response.get("history", [])
         new_incoming_count = 0
 
         for h_record in history_records:
+            # ONLY populate new_message_pairs for true discrete message additions
             if "messagesAdded" in h_record:
                 for item in h_record["messagesAdded"]:
                     msg_id = item["message"]["id"]
@@ -269,6 +264,7 @@ def lambda_handler(event, context):
                         )
                         new_incoming_count += 1
 
+            # Process label events strictly to update DynamoDB log records and metrics
             for label_event in h_record.get("labelsRemoved", []) + h_record.get(
                 "labelsAdded", []
             ):
@@ -280,22 +276,19 @@ def lambda_handler(event, context):
         if new_incoming_count > 0:
             increment_incoming_count(tenant_email, count=new_incoming_count)
 
+        # Restore original cursor save directly after processing the history loop
+        save_last_history_id(tenant_email, pubsub_history_id)
+
     except Exception as e:
         logger.error(f"Error querying Gmail History API for {tenant_email}: {str(e)}")
-        # Exit early so cursor is NOT updated if history fetch fails
-        return {"statusCode": 500, "body": json.dumps(f"History fetch error: {str(e)}")}
 
-    # Process policies and SQS enqueueing
     if processed_senders:
         evaluate_and_update_policies(tenant_email, processed_senders)
 
     if new_message_pairs:
         enqueue_enforce_records(tenant_email, new_message_pairs, is_canary=is_canary)
 
-    # ONLY save the history ID checkpoint after processing and enqueueing succeed!
-    save_last_history_id(tenant_email, target_history_id)
-
-    logger.info(f"=== Finished Ingest Pass. Updated cursor to {target_history_id} ===")
+    logger.info("=== Finished Ingest Pass ===")
     return {"statusCode": 200, "body": json.dumps("Success")}
 
 
