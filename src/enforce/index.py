@@ -106,9 +106,7 @@ def lambda_handler(event, context):
 
     batch_item_failures = []
     sqs_records = event.get("Records", [])
-    logger.info(
-        f"[ENFORCE TRACE] Received {len(sqs_records)} SQS Record(s) in event trigger."
-    )
+    logger.info(f"[ENFORCE TRACE] Received SQS Batch | Size={len(sqs_records)}")
 
     if not sqs_records:
         logger.info("No SQS Records in event payload. Exiting cleanly.")
@@ -122,6 +120,12 @@ def lambda_handler(event, context):
         try:
             body_str = record.get("body", "{}")
             payload = json.loads(body_str) if isinstance(body_str, str) else body_str
+
+            logger.info(
+                f"[ENFORCE TRACE] Processing Record | SQS_MsgId={sqs_msg_id} | "
+                f"Gmail_MsgId={payload.get('message_id')} | "
+                f"is_canary={payload.get('is_canary')}"
+            )
 
             if isinstance(payload, dict) and "message_id" in payload:
                 payload["_sqs_message_id"] = sqs_msg_id
