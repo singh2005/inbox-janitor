@@ -125,7 +125,11 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
         return
 
     entries = []
+    # Map internal batch item 'Id' to details for correlation in the SQS response loop
+    item_metadata = {}
+
     for idx, pair in enumerate(message_pairs):
+        entry_id = str(idx)
         dedup_id = f"{tenant_email}_{pair['message_id']}"
         payload = {
             "tenant_email": tenant_email,
@@ -135,19 +139,29 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
             "is_canary": is_canary,
         }
 
+        serialized_body = json.dumps(payload)
+
+        # Enhanced log capturing stringified payload & runtime variable metadata
         logger.info(
-            f"[ENQUEUE TRACE] Preparing SQS Entry | Id={idx} | "
-            f"MessageId={pair['message_id']} | DedupId={dedup_id} | Sender={pair['sender_address']}"
+            f"[ENQUEUE TRACE] Preparing SQS Entry | Id={entry_id} | "
+            f"Gmail_MsgId={pair['message_id']} | DedupId={dedup_id} | "
+            f"is_canary_type={type(is_canary).__name__} | is_canary_val={is_canary} | "
+            f"SerializedBody={serialized_body}"
         )
 
         entries.append(
             {
-                "Id": str(idx),
-                "MessageBody": json.dumps(payload),
+                "Id": entry_id,
+                "MessageBody": serialized_body,
                 "MessageDeduplicationId": dedup_id,
                 "MessageGroupId": f"gmail_enforce_{tenant_email}",
             }
         )
+
+        item_metadata[entry_id] = {
+            "gmail_msg_id": pair["message_id"],
+            "body": serialized_body,
+        }
 
     for i in range(0, len(entries), 10):
         batch_chunk = entries[i : i + 10]
@@ -160,15 +174,24 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
             failed = response.get("Failed", [])
 
             for s in successful:
+                entry_id = s["Id"]
+                meta = item_metadata.get(entry_id, {})
                 logger.info(
-                    f"[ENQUEUE TRACE] SQS Accepted Entry Id={s['Id']} | "
-                    f"SQS_MsgId={s['MessageId']} | SequenceNumber={s.get('SequenceNumber')}"
+                    f"[ENQUEUE TRACE] SQS Accepted Entry Id={entry_id} | "
+                    f"Gmail_MsgId={meta.get('gmail_msg_id')} | "
+                    f"SQS_MsgId={s['MessageId']} | "
+                    f"SequenceNumber={s.get('SequenceNumber')} | "
+                    f"Body={meta.get('body')}"
                 )
 
             for f in failed:
+                entry_id = f["Id"]
+                meta = item_metadata.get(entry_id, {})
                 logger.error(
-                    f"[ENQUEUE TRACE] SQS REJECTED Entry Id={f['Id']} | "
-                    f"Code={f['Code']} | Message={f.get('Message')} | SenderFault={f.get('SenderFault')}"
+                    f"[ENQUEUE TRACE] SQS REJECTED Entry Id={entry_id} | "
+                    f"Gmail_MsgId={meta.get('gmail_msg_id')} | "
+                    f"Code={f['Code']} | Message={f.get('Message')} | "
+                    f"SenderFault={f.get('SenderFault')}"
                 )
 
         except Exception as e:
