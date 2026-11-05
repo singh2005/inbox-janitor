@@ -130,7 +130,8 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
 
     for idx, pair in enumerate(message_pairs):
         entry_id = str(idx)
-        dedup_id = f"{tenant_email}_{pair['message_id']}"
+        timestamp_ms = int(time.time() * 1000)
+        dedup_id = f"{tenant_email}_{pair['message_id']}_{timestamp_ms}"
         payload = {
             "tenant_email": tenant_email,
             "message_id": pair["message_id"],
