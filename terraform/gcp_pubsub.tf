@@ -1,5 +1,7 @@
-# Fetch current GCP project details to target the Pub/Sub System Service Agent
-data "google_project" "current" {}
+# Fetch current GCP project details using the project ID variable
+data "google_project" "current" {
+  project_id = var.gcp_project_id
+}
 
 # 1. Dedicated Service Account that GCP Pub/Sub will impersonate to issue OIDC JWTs
 resource "google_service_account" "pubsub_invoker" {
@@ -48,7 +50,7 @@ resource "google_pubsub_subscription" "gmail_push_subscription" {
     # Automatically attaches 'Authorization: Bearer <JWT>' to requests
     oidc_token {
       service_account_email = google_service_account.pubsub_invoker.email
-      
+
       # Match the exact API Gateway endpoint URL (serves as the JWT 'aud' claim)
       audience = "${aws_apigatewayv2_api.ingest_api.api_endpoint}/gmail-event"
     }

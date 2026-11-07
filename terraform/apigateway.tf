@@ -12,8 +12,8 @@ resource "aws_apigatewayv2_stage" "default" {
   auto_deploy = true
 
   default_route_settings {
-    throttling_rate_limit  = 2 # Steady state RPS limit
-    throttling_burst_limit = 4 # Burst request bucket limit
+    throttling_rate_limit  = 10 # Sustained RPS cap
+    throttling_burst_limit = 20 # Concurrency burst bucket
   }
 }
 
@@ -54,10 +54,10 @@ resource "aws_apigatewayv2_integration" "sqs_ingress_integration" {
 
 # 5. Secured Route linked directly to the JWT Authorizer
 resource "aws_apigatewayv2_route" "post_gmail_event_route" {
-  api_id             = aws_apigatewayv2_api.ingest_api.id
-  route_key          = "POST /gmail-event"
-  target             = "integrations/${aws_apigatewayv2_integration.sqs_ingress_integration.id}"
-  
+  api_id    = aws_apigatewayv2_api.ingest_api.id
+  route_key = "POST /gmail-event"
+  target    = "integrations/${aws_apigatewayv2_integration.sqs_ingress_integration.id}"
+
   # Connect JWT Authorization
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.gcp_pubsub_jwt.id
