@@ -46,10 +46,6 @@ resource "aws_lambda_event_source_mapping" "sqs_to_enforce_canary" {
   function_name           = aws_lambda_alias.enforce_canary.arn
   batch_size              = 10
   function_response_types = ["ReportBatchItemFailures"]
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 resource "aws_sqs_queue" "enforce_prod_dlq" {
@@ -75,8 +71,4 @@ resource "aws_lambda_event_source_mapping" "sqs_to_enforce_prod" {
   function_name           = aws_lambda_alias.enforce_prod.arn
   batch_size              = 10
   function_response_types = ["ReportBatchItemFailures"]
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
