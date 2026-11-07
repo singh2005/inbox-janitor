@@ -15,9 +15,12 @@ dynamodb = boto3.resource("dynamodb")
 ssm_client = boto3.client("ssm")
 sqs_client = boto3.client("sqs")
 
-TABLE_NAME = os.environ.get("MULTI_TABLE_NAME", "inbox-janitor-multitenant-rules-tf")
+TABLE_NAME = os.environ.get(
+    "MULTITENANT_RULES_TABLE", "inbox-janitor-multitenant-rules-tf"
+)
 GCP_PUBSUB_TOPIC = os.environ.get("GCP_PUBSUB_TOPIC")
-ENFORCE_QUEUE_URL = os.environ.get("ENFORCE_QUEUE_URL")
+ENFORCE_QUEUE_URL_CANARY = os.environ.get("ENFORCE_QUEUE_URL_CANARY")
+ENFORCE_QUEUE_URL_PROD = os.environ.get("ENFORCE_QUEUE_URL_PROD")
 DEFAULT_TENANT_EMAIL = os.environ.get("TENANT_EMAIL", "singh2005@gmail.com")
 
 MULTI_TABLE = dynamodb.Table(TABLE_NAME)
@@ -121,7 +124,9 @@ def save_last_history_id(tenant_email, incoming_history_id):
 
 
 def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
-    if not message_pairs or not ENFORCE_QUEUE_URL:
+    target_queue_url = ENFORCE_QUEUE_URL_CANARY if is_canary else ENFORCE_QUEUE_URL_PROD
+
+    if not message_pairs or not target_queue_url:
         return
 
     entries = []
@@ -130,8 +135,7 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
 
     for idx, pair in enumerate(message_pairs):
         entry_id = str(idx)
-        timestamp_ms = int(time.time() * 1000)
-        dedup_id = f"{tenant_email}_{pair['message_id']}_{timestamp_ms}"
+        dedup_id = f"{tenant_email}_{pair['message_id']}"
         payload = {
             "tenant_email": tenant_email,
             "message_id": pair["message_id"],
@@ -141,14 +145,6 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
         }
 
         serialized_body = json.dumps(payload)
-
-        # Enhanced log capturing stringified payload & runtime variable metadata
-        logger.info(
-            f"[ENQUEUE TRACE] Preparing SQS Entry | Id={entry_id} | "
-            f"Gmail_MsgId={pair['message_id']} | DedupId={dedup_id} | "
-            f"is_canary_type={type(is_canary).__name__} | is_canary_val={is_canary} | "
-            f"SerializedBody={serialized_body}"
-        )
 
         entries.append(
             {
@@ -168,7 +164,7 @@ def enqueue_enforce_records(tenant_email, message_pairs, is_canary=False):
         batch_chunk = entries[i : i + 10]
         try:
             response = sqs_client.send_message_batch(
-                QueueUrl=ENFORCE_QUEUE_URL, Entries=batch_chunk
+                QueueUrl=target_queue_url, Entries=batch_chunk
             )
 
             successful = response.get("Successful", [])
