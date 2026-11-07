@@ -33,7 +33,7 @@ resource "aws_sqs_queue" "enforce_canary_queue" {
   name                        = "inbox-janitor-enforce-canary-queue.fifo"
   fifo_queue                  = true
   content_based_deduplication = true
-  visibility_timeout_seconds  = 60
+  visibility_timeout_seconds  = 360
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.enforce_canary_dlq.arn
@@ -58,7 +58,7 @@ resource "aws_sqs_queue" "enforce_prod_queue" {
   name                        = "inbox-janitor-enforce-prod-queue.fifo"
   fifo_queue                  = true
   content_based_deduplication = true
-  visibility_timeout_seconds  = 60
+  visibility_timeout_seconds  = 360
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.enforce_prod_dlq.arn
