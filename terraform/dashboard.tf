@@ -33,9 +33,9 @@ resource "aws_cloudwatch_dashboard" "inbox_janitor_pipeline" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", aws_sqs_queue.enforce_queue.name, { stat = "Sum", period = 60 }],
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.enforce_queue.name, { stat = "Average", period = 60 }],
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.enforce_dlq.name, { stat = "Maximum", period = 60, color = "#d62728" }]
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", aws_sqs_queue.enforce_canary_queue.name, { stat = "Sum", period = 60 }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.enforce_canary_queue.name, { stat = "Average", period = 60 }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.enforce_canary_queue.name, { stat = "Maximum", period = 60, color = "#d62728" }]
           ]
           view    = "timeSeries"
           stacked = false

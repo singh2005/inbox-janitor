@@ -90,9 +90,9 @@ resource "aws_iam_policy" "ingest_sqs_send" {
     Version = "2012-10-17"
     Statement = [
       {
-        Action   = ["sqs:SendMessage"]
+        Action   = ["sqs:SendMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl"]
         Effect   = "Allow"
-        Resource = aws_sqs_queue.enforce_queue.arn
+        Resource = [aws_sqs_queue.enforce_canary_queue.arn, aws_sqs_queue.enforce_prod_queue.arn]
       }
     ]
   })

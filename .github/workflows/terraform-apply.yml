@@ -66,4 +66,4 @@ jobs:
       - name: Terraform Apply
         env: 
           TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}    
-        run: terraform apply -input=false -auto-approve
+        run: terraform apply -input=false -auto-approve -target=aws_sqs_queue.enforce_canary_queue -target=aws_sqs_queue.enforce_canary_dlq -target=aws_sqs_queue.enforce_prod_queue -target=aws_sqs_queue.enforce_prod_dlq
