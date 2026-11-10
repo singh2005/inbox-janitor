@@ -320,7 +320,13 @@ def process_single_message(service, tenant_email, msg_id):
             .get(userId="me", id=msg_id, format="metadata")
             .execute()
         )
-
+        
+        label_ids = detail.get("labelIds", [])
+        
+        if "INBOX" not in label_ids:
+            logger.info(f"Skipping message {msg_id} for tenant {tenant_email}: missing INBOX label (labels: {label_ids})")
+            return None, 0
+        
         headers = {
             h["name"]: h["value"] for h in detail.get("payload", {}).get("headers", [])
         }
@@ -332,7 +338,6 @@ def process_single_message(service, tenant_email, msg_id):
             sender_full.split("<")[0].strip() if "<" in sender_full else sender_full
         )
 
-        label_ids = detail.get("labelIds", [])
         status = "UNREAD" if "UNREAD" in label_ids else "READ"
         raw_size = detail.get("sizeEstimate")
         size_bytes = int(raw_size) if raw_size is not None else 0
