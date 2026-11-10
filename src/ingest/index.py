@@ -324,7 +324,7 @@ def process_single_message(service, tenant_email, msg_id):
         label_ids = detail.get("labelIds", [])
         
         if "INBOX" not in label_ids:
-            logger.info(f"Skipping message {message_id} for tenant {tenant_email}: missing INBOX label (labels: {label_ids}")
+            logger.info(f"Skipping message {msg_id} for tenant {tenant_email}: missing INBOX label (labels: {label_ids})")
             return None, 0
         
         headers = {
