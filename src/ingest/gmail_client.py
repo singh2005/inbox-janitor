@@ -5,14 +5,11 @@ from datetime import datetime, timezone
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-from config import (
-    CREDENTIALS_CACHE,
-    GCP_PUBSUB_TOPIC,
-    MULTI_TABLE,
-    ssm_client,
-)
+from config import GCP_PUBSUB_TOPIC, MULTI_TABLE, ssm_client
 
 logger = logging.getLogger()
+
+CREDENTIALS_CACHE = {}
 
 
 def get_tenant_param_name(tenant_email: str) -> str:

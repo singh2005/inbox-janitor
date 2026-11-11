@@ -10,7 +10,6 @@ ENFORCE_QUEUE_URL_PROD = os.environ.get("ENFORCE_QUEUE_URL_PROD")
 DEFAULT_TENANT_EMAIL = os.environ.get("TENANT_EMAIL", "singh2005@gmail.com")
 
 TTL_RETENTION_SECONDS = 3888000
-CREDENTIALS_CACHE = {}
 
 dynamodb = boto3.resource("dynamodb")
 ssm_client = boto3.client("ssm")
