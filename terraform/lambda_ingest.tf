@@ -16,7 +16,7 @@ resource "aws_lambda_layer_version" "google_api_layer" {
 
 data "archive_file" "ingest_lambda_zip" {
   type        = "zip"
-  source_file = "${path.module}/../src/ingest/index.py"
+  source_file = "${path.module}/../src/ingest"
   output_path = "${path.module}/builds/ingest_lambda.zip"
 }
 
