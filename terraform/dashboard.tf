@@ -77,8 +77,7 @@ resource "aws_cloudwatch_dashboard" "inbox_janitor_pipeline" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/DynamoDB", "SystemErrors", "TableName", aws_dynamodb_table.raw_email_logs.name, { stat = "Sum", period = 60 }],
-            ["AWS/DynamoDB", "SystemErrors", "TableName", aws_dynamodb_table.active_routing_rules.name, { stat = "Sum", period = 60 }]
+            ["AWS/DynamoDB", "SystemErrors", "TableName", aws_dynamodb_table.multitenant_rules.name, { stat = "Sum", period = 60 }],
           ]
           view    = "timeSeries"
           stacked = false
