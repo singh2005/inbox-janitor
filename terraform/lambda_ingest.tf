@@ -32,7 +32,7 @@ resource "aws_lambda_function" "ingest_engine" {
   filename         = data.archive_file.ingest_lambda_zip.output_path
   source_code_hash = data.archive_file.ingest_lambda_zip.output_base64sha256
 
-  publish = true
+  publish = false
 
   layers = [
     aws_lambda_layer_version.google_api_layer.arn
@@ -41,10 +41,7 @@ resource "aws_lambda_function" "ingest_engine" {
   environment {
     variables = {
       GCP_PUBSUB_TOPIC         = google_pubsub_topic.gmail_push_topic.id
-      LOGS_TABLE               = aws_dynamodb_table.raw_email_logs.name
-      RULES_TABLE              = aws_dynamodb_table.active_routing_rules.name
       MULTITENANT_RULES_TABLE  = aws_dynamodb_table.multitenant_rules.name
-      SECRET_ARN               = local.gmail_credentials_secret_arn
       ENFORCE_QUEUE_URL_CANARY = aws_sqs_queue.enforce_canary_queue.url
       ENFORCE_QUEUE_URL_PROD   = aws_sqs_queue.enforce_prod_queue.url
     }
