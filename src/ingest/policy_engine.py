@@ -29,11 +29,10 @@ def evaluate_and_update_policies(tenant_email: str, processed_senders: set):
         MULTI_TABLE.update_item(
             Key={"PK": f"USER#{tenant_email}", "SK": f"SENDER#{address}"},
             UpdateExpression=(
-                "SET sender_name = :sn, unread_streak = :us, active_policy = :ap, last_evaluated = :le, sender_address = :sa "
-                "REMOVE trashed_count, entity_type"
+                "SET unread_streak = :us, active_policy = :ap, last_evaluated = :le, sender_address = :sa "
+                "REMOVE sender_name, trashed_count, entity_type"
             ),
             ExpressionAttributeValues={
-                ":sn": sender_name,
                 ":us": f"{unread_count}/{total_sampled}",
                 ":ap": policy,
                 ":le": now_iso,
