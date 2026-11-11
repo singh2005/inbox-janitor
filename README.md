@@ -1,6 +1,6 @@
 # Inbox Janitor
 
-An event-driven, cloud-native inbox management engine that automatically identifies, logs, and cleans up persistent clutter in your Gmail account—operating in real-time with zero manual rule maintenance.
+An event-driven, cloud-native inbox management engine that automatically identifies, logs, and cleans up persistent clutter in your Gmail inbox — operating in real-time with zero manual rule maintenance.
 
 ---
 
@@ -17,20 +17,20 @@ An event-driven, cloud-native inbox management engine that automatically identif
 
 ## What Inbox Janitor Offers
 
-Inbox Janitor turns your Gmail inbox into a self-healing environment. Instead of forcing you to build and update static email filters, it acts as an intelligent supervisor that monitors sender habits, calculates engagement streaks, and enforces automated cleanup policies dynamically.
+Inbox Janitor turns your Gmail inbox into a self-cleaning clutter-free environment. Instead of forcing you to build and update static email filters, it acts as an intelligent supervisor that monitors sender habits, calculates engagement streaks, and enforces automated cleanup policies dynamically.
 
 ### Key Capabilities
 
-* **Automated Unread Streak Detection:** Evaluates a rolling window of recent emails per sender (e.g., 6 consecutive messages). If a sender continuously sends unread marketing emails or newsletters, their status escalates automatically.
-* **Autonomous Trash Enforcement:** When a sender triggers a persistent unread streak, their incoming messages bypass your main view and route straight to Gmail Trash via asynchronous SQS enforcement workers.
-* **Human-in-the-Loop Safety:** Adjusts naturally to your behavior. Gmail automatically retains trashed messages for 30 days. The moment you open or retrieve an email from Trash, the system instantly recalculates the sender's engagement streak and restores their policy to `ALLOW`.
-* **Zero-Polling, Real-Time Architecture:** Reacts instantly as email events occur rather than relying on slow, scheduled cron polling.
-
+* **Automated Unread Streak Detection:** Evaluates a rolling window of recent emails per sender (e.g., 6 consecutive messages). If a sender continuously sends marketing emails or newsletters that you never read, their status escalates automatically.
+* **Strict INBOX Scope Filtering:** Processes only incoming messages landing in your primary `INBOX`, ignoring promotional tab updates, sent messages, and archived noise.
+* **Autonomous Trash Enforcement:** When a sender triggers a persistent unread streak, their incoming messages bypass your main view and route straight to Gmail Trash via targeted SQS FIFO enforcement workers.
+* **Human-in-the-Loop Safety:** Adjusts naturally to your behavior. Gmail automatically retains trashed messages for 30 days. The moment you open or retrieve an email from Trash, the system recalculates the sender's engagement streak and restores their policy to `ALLOW`.
+* **Zero-Polling, Real-Time Architecture:** Reacts instantly as email events occur via GCP Pub/Sub push notifications rather than relying on slow, scheduled cron polling.
 ---
 
 ## The Event-Driven Architecture
 
-Inbox Janitor operates on an immediate, decoupled feedback loop between Google Gmail, AWS Serverless infrastructure, and your daily email habits.
+Inbox Janitor operates on an immediate, decoupled feedback loop between Google Gmail, GCP Pub/Sub, AWS Serverless infrastructure, and your daily email habits.
 
 ```text
                                   [ User Receives / Reads Email ]
@@ -40,35 +40,37 @@ Inbox Janitor operates on an immediate, decoupled feedback loop between Google G
                                                  │
                                                  │ Real-Time Push Event
                                                  ▼
-                                       [ GCP Pub/Sub Topic ]
+                                     [ GCP Pub/Sub Subscription ]
+                                     (Signed Google OIDC Bearer Token)
                                                  │
-                                                 │ Webhook Delivery
+                                                 │ Authenticated POST /gmail-event
                                                  ▼
-                                     [ AWS API Gateway HTTP ]
+                                  [ AWS API Gateway V2 (HTTP) ]
+                                  (JWT Authorizer + Rate Limits)
                                                  │
                                                  ▼
-                                      [ Ingest Lambda Engine ]
+                                   [ Ingress SQS FIFO Queue ]
+                                 (Partial Batch Item Failures)
                                                  │
-                        ┌────────────────────────┴────────────────────────┐
-                        │                                                 │
-             ( Evaluate Unread Streak )                              ( Policy Check )
-                        │                                                 │
-                        ▼                                                 ▼
-             [ Active Rules DynamoDB ]                             Policy: DELETE?
-          (Update Policy ALLOW/DELETE)                                    │
-                                                                 Yes ────┴──── No
-                                                                  │             │
-                                                                  ▼             ▼
-                                                            [ SQS FIFO ]     (ALLOW)
-                                                                  │         No Action
-                                                                  ▼
-                                                          [ Enforce Lambda ]
-                                                          (Batch Modify API)
-                                                                  │
-                                                                  ▼
-                                                      [ Global Metrics Update ]
-                                                     (Total Trashed Incremented)
+                                                 ▼
+                                       [ Router Lambda Engine ]
+                                  (Multi-Tenant Routing Cache)
+                                                 │
+                                 ┌───────────────┴───────────────┐
+                                 ▼                               ▼
+                      [ Ingest Lambda: CANARY ]       [ Ingest Lambda: PROD ]
+                      (label:INBOX Filtering)         (label:INBOX Filtering)
+                                 │                               │
+                      ┌──────────┴──────────┐         ┌──────────┴──────────┐
+                      ▼                     ▼         ▼                     ▼
+                [ DynamoDB ]          [ SQS FIFO ]  [ DynamoDB ]          [ SQS FIFO ]
+            (LOG# & SENDER Policy)  (Canary Enforce)(LOG# & SENDER Policy)  (Prod Enforce)
+                                            │                               │
+                                            ▼                               ▼
+                                   [ Enforce Lambda ]              [ Enforce Lambda ]
+                                   (Gmail API Trash)               (Gmail API Trash)
 ```
+
 ## How You Control Rules Just By Using Your Inbox
 
 You never need to log into AWS, edit a database, or manage routing rules manually. Your day-to-day interactions with your inbox serve as the single source of truth:
@@ -77,8 +79,9 @@ You never need to log into AWS, edit a database, or manage routing rules manuall
 * **Real-Time Policy Reset:** The read status change fires a real-time push event via GCP Pub/Sub directly to the AWS ingest engine. The system recalculates the rolling window (e.g., dropping the streak to 5/6), instantly updates the sender's active policy back to ALLOW, and ensures future emails land safely in your primary inbox.
 ---
 ## Cloud-Native Infrastructure & One-Click Deployment
-* Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into any cloud environment.
+* Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into AWS cloud environment.
 * **Dual-Cloud Architecture (AWS + GCP):** Harnesses Google Cloud Pub/Sub for native Gmail event streaming and AWS Serverless (API Gateway, SQS FIFO, Lambda, DynamoDB, Secrets Manager) for asynchronous processing, retry handling, and policy evaluation.
+* **Canary Release Strategy** Built-in tenant routing allows safe validation of upcoming ingest features via a targeted :CANARY Lambda alias while general traffic remains on :PROD.
 * **Fault-Tolerant Queueing:** Decouples ingestion from enforcement using SQS FIFO queues with partial batch failure reporting (ReportBatchItemFailures) and Dead-Letter Queues (DLQ) to ensure zero message loss during transient API errors or rate-limit blips.
 * **100% Infrastructure as Code (Terraform):** Everything—IAM roles, environment variables, DynamoDB tables, SQS queues, Lambda functions, and API bindings—is codified in Terraform.
 * **Zero Server Overhead:** Uses fully managed serverless components that scale down to zero when idle, fitting entirely within AWS and GCP Free Tier limits for standard personal use.
