@@ -49,9 +49,13 @@ def process_single_message(service, tenant_email: str, msg_id: str):
 
         label_ids = detail.get("labelIds", [])
 
-        if "INBOX" not in label_ids:
+        # Strict Domain Boundary: Only process messages in INBOX or TRASH (ignore SPAM and custom filters)
+        has_inbox = "INBOX" in label_ids
+        has_trash = "TRASH" in label_ids
+
+        if not (has_inbox or has_trash):
             logger.info(
-                f"Skipping message {msg_id} for tenant {tenant_email}: missing INBOX label (labels: {label_ids})"
+                f"Skipping message {msg_id}: not in INBOX or TRASH (labels: {label_ids})"
             )
             return None, 0
 
@@ -79,6 +83,7 @@ def process_single_message(service, tenant_email: str, msg_id: str):
         sort_key = f"{iso_timestamp}#{msg_id}"
         ttl_timestamp = int(time.time()) + TTL_RETENTION_SECONDS
 
+        # Update or overwrite DDB item (deduplicated by timestamp#message_id sort key)
         MULTI_TABLE.put_item(
             Item={
                 "PK": f"USER#{tenant_email}#SENDER#{sender_address}",
@@ -92,7 +97,11 @@ def process_single_message(service, tenant_email: str, msg_id: str):
                 "ttl_timestamp": ttl_timestamp,
             }
         )
-        return sender_address, size_bytes
+
+        # Signal size > 0 ONLY if currently in INBOX so index.py enqueues to SQS
+        inbox_size = size_bytes if has_inbox else 0
+        return sender_address, inbox_size
+
     except Exception as e:
         logger.error(f"Failed processing message {msg_id} for {tenant_email}: {str(e)}")
         return None, 0

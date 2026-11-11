@@ -74,6 +74,7 @@ def lambda_handler(event, context):
         new_incoming_count = 0
 
         for h_record in history_records:
+            # 1. New Message Arrivals
             if "messagesAdded" in h_record:
                 for item in h_record["messagesAdded"]:
                     msg_id = item["message"]["id"]
@@ -82,15 +83,17 @@ def lambda_handler(event, context):
                     )
                     if sender:
                         processed_senders.add(sender)
-                        new_message_pairs.append(
-                            {
-                                "message_id": msg_id,
-                                "sender_address": sender,
-                                "size_bytes": size_bytes,
-                            }
-                        )
-                        new_incoming_count += 1
+                        if size_bytes > 0:
+                            new_message_pairs.append(
+                                {
+                                    "message_id": msg_id,
+                                    "sender_address": sender,
+                                    "size_bytes": size_bytes,
+                                }
+                            )
+                            new_incoming_count += 1
 
+            # 2. Label State Sync (READ / UNREAD toggles in INBOX or TRASH)
             for label_event in h_record.get("labelsRemoved", []) + h_record.get(
                 "labelsAdded", []
             ):
