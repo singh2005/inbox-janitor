@@ -79,7 +79,7 @@ You never need to log into AWS, edit a database, or manage routing rules manuall
 * **Real-Time Policy Reset:** The read status change fires a real-time push event via GCP Pub/Sub directly to the AWS ingest engine. The system recalculates the rolling window (e.g., dropping the streak to 5/6), instantly updates the sender's active policy back to ALLOW, and ensures future emails land safely in your primary inbox.
 ---
 ## Cloud-Native Infrastructure & One-Click Deployment
-* Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into AWS cloud environment.
+Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into AWS cloud environment.
 * **Dual-Cloud Architecture (AWS + GCP):** Harnesses Google Cloud Pub/Sub for native Gmail event streaming and AWS Serverless (API Gateway, SQS FIFO, Lambda, DynamoDB, Secrets Manager) for asynchronous processing, retry handling, and policy evaluation.
 * **Canary Release Strategy** Built-in tenant routing allows safe validation of upcoming ingest features via a targeted :CANARY Lambda alias while general traffic remains on :PROD.
 * **Fault-Tolerant Queueing:** Decouples ingestion from enforcement using SQS FIFO queues with partial batch failure reporting (ReportBatchItemFailures) and Dead-Letter Queues (DLQ) to ensure zero message loss during transient API errors or rate-limit blips.
