@@ -88,12 +88,7 @@ def process_single_message(service, tenant_email: str, msg_id: str):
             Item={
                 "PK": f"USER#{tenant_email}#SENDER#{sender_address}",
                 "SK": f"LOG#{sort_key}",
-                "message_id": msg_id,
-                "sender_address": sender_address,
-                "sender_name": sender_name,
-                "subject": subject,
                 "status": status,
-                "timestamp": iso_timestamp,
                 "ttl_timestamp": ttl_timestamp,
             }
         )
