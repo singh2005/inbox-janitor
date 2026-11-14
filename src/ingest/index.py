@@ -7,8 +7,6 @@ from gmail_client import (
     check_and_renew_gmail_watch,
     get_google_credentials,
 )
-from policy_engine import evaluate_and_update_policies
-from sqs_publisher import enqueue_enforce_records
 from storage import (
     get_last_history_id,
     increment_incoming_count,
@@ -49,9 +47,6 @@ def lambda_handler(event, context):
         logger.info("No historyId present in payload. Skipping history sync.")
         return {"statusCode": 200, "body": json.dumps("No historyId found.")}
 
-    processed_senders = set()
-    new_message_pairs = []
-
     last_history_id = get_last_history_id(tenant_email)
     if not last_history_id:
         save_last_history_id(tenant_email, pubsub_history_id)
@@ -71,36 +66,30 @@ def lambda_handler(event, context):
         logger.info(f"logging history_response >>> {json.dumps(history_response)}")
 
         history_records = history_response.get("history", [])
+        seen_msg_ids = set()
         new_incoming_count = 0
 
         for h_record in history_records:
             # 1. New Message Arrivals
-            if "messagesAdded" in h_record:
-                for item in h_record["messagesAdded"]:
-                    msg_id = item["message"]["id"]
-                    sender, size_bytes = process_single_message(
-                        service, tenant_email, msg_id
-                    )
-                    if sender:
-                        processed_senders.add(sender)
-                        if size_bytes > 0:
-                            new_message_pairs.append(
-                                {
-                                    "message_id": msg_id,
-                                    "sender_address": sender,
-                                    "size_bytes": size_bytes,
-                                }
-                            )
-                            new_incoming_count += 1
+            for item in h_record.get("messagesAdded", []):
+                msg_id = item["message"]["id"]
+                if msg_id in seen_msg_ids:
+                    continue
+                seen_msg_ids.add(msg_id)
+
+                if process_single_message(service, tenant_email, msg_id):
+                    new_incoming_count += 1
 
             # 2. Label State Sync (READ / UNREAD toggles in INBOX or TRASH)
             for label_event in h_record.get("labelsRemoved", []) + h_record.get(
                 "labelsAdded", []
             ):
                 msg_id = label_event["message"]["id"]
-                sender, _ = process_single_message(service, tenant_email, msg_id)
-                if sender:
-                    processed_senders.add(sender)
+                if msg_id in seen_msg_ids:
+                    continue
+                seen_msg_ids.add(msg_id)
+
+                process_single_message(service, tenant_email, msg_id)
 
         if new_incoming_count > 0:
             increment_incoming_count(tenant_email, count=new_incoming_count)
@@ -109,12 +98,6 @@ def lambda_handler(event, context):
 
     except Exception as e:
         logger.error(f"Error querying Gmail History API for {tenant_email}: {str(e)}")
-
-    if processed_senders:
-        evaluate_and_update_policies(tenant_email, processed_senders)
-
-    if new_message_pairs:
-        enqueue_enforce_records(tenant_email, new_message_pairs, is_canary=is_canary)
 
     logger.info("=== Finished Ingest Pass ===")
     return {"statusCode": 200, "body": json.dumps("Success")}

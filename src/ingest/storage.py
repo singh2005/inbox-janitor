@@ -57,18 +57,14 @@ def process_single_message(service, tenant_email: str, msg_id: str):
             logger.info(
                 f"Skipping message {msg_id}: not in INBOX or TRASH (labels: {label_ids})"
             )
-            return None, 0
+            return False
 
         headers = {
             h["name"]: h["value"] for h in detail.get("payload", {}).get("headers", [])
         }
 
         sender_full = headers.get("From", "Unknown <unknown@example.com>")
-        subject = headers.get("Subject", "(No Subject)")
         sender_address = sender_full.split("<")[-1].replace(">", "").lower().strip()
-        sender_name = (
-            sender_full.split("<")[0].strip() if "<" in sender_full else sender_full
-        )
 
         status = "UNREAD" if "UNREAD" in label_ids else "READ"
         raw_size = detail.get("sizeEstimate")
@@ -95,13 +91,11 @@ def process_single_message(service, tenant_email: str, msg_id: str):
             }
         )
 
-        # Signal size > 0 ONLY if currently in INBOX so index.py enqueues to SQS
-        inbox_size = size_bytes if has_inbox else 0
-        return sender_address, inbox_size
+        return has_inbox
 
     except Exception as e:
         logger.error(f"Failed processing message {msg_id} for {tenant_email}: {str(e)}")
-        return None, 0
+        return False
 
 
 def increment_incoming_count(tenant_email: str, count: int = 1):
