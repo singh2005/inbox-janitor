@@ -68,7 +68,7 @@ resource "aws_lambda_function" "policy_evaluator" {
       ENFORCE_QUEUE_URL_CANARY = aws_sqs_queue.enforce_canary_queue.url
       ENFORCE_QUEUE_URL_PROD   = aws_sqs_queue.enforce_prod_queue.url
       CANARY_TENANTS           = jsonencode(local.canary_tenants)
-      SHADOW_MODE              = "true"
+      SHADOW_MODE              = "false"
     }
   }
 
