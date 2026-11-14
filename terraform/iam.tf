@@ -1,3 +1,30 @@
+resource "aws_iam_policy" "ingest_dynamodb_access" {
+  name        = "inbox-janitor-ingest-dynamodb-access"
+  description = "Least-privilege DynamoDB access for Ingest Lambda (GetItem, PutItem, UpdateItem)"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem"
+      ]
+      Resource = aws_dynamodb_table.multitenant_rules.arn
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "custom_attachments" {
+  for_each = {
+    dynamodb       = aws_iam_policy.ingest_dynamodb_access.arn
+    ssm_parameters = aws_iam_policy.ssm_parameter_access.arn
+  }
+
+  role       = aws_iam_role.ingest_lambda_exec.name
+  policy_arn = each.value
+}
+
 resource "aws_iam_role" "ingest_lambda_exec" {
   name = "inbox-janitor-ingest-lambda-exec-role"
   assume_role_policy = jsonencode({
@@ -52,20 +79,6 @@ resource "aws_iam_policy" "ssm_parameter_access" {
   })
 }
 
-resource "aws_iam_policy" "allow_invoke_enforce_lambda" {
-  name        = "inbox-janitor-allow-invoke-enforce-lambda"
-  description = "Allows ingest engine to invoke enforce execution lambda"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "lambda:InvokeFunction"
-      Resource = "arn:aws:lambda:us-east-1:*:function:inbox-janitor-enforce*"
-    }]
-  })
-}
-
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
   role       = aws_iam_role.ingest_lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -75,7 +88,6 @@ resource "aws_iam_role_policy_attachment" "custom_attachments" {
   for_each = {
     dynamodb       = aws_iam_policy.dynamodb_access.arn
     ssm_parameters = aws_iam_policy.ssm_parameter_access.arn
-    invoke_enforce = aws_iam_policy.allow_invoke_enforce_lambda.arn
   }
 
   role       = aws_iam_role.ingest_lambda_exec.name
@@ -96,11 +108,6 @@ resource "aws_iam_policy" "ingest_sqs_send" {
       }
     ]
   })
-}
-
-resource "aws_iam_role_policy_attachment" "ingest_sqs_attach" {
-  role       = aws_iam_role.ingest_lambda_exec.name
-  policy_arn = aws_iam_policy.ingest_sqs_send.arn
 }
 
 resource "aws_iam_role" "apigw_sqs_role" {
