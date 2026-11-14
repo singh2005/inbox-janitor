@@ -13,11 +13,6 @@ resource "aws_cloudwatch_log_group" "router_lambda_logs" {
   retention_in_days = 14
 }
 
-import {
-  to = aws_cloudwatch_log_group.policy_evaluator_logs
-  id = "/aws/lambda/inbox-janitor-policy-evaluator-tf"
-}
-
 resource "aws_cloudwatch_log_group" "policy_evaluator_logs" {
   name              = "/aws/lambda/${aws_lambda_function.policy_evaluator.function_name}"
   retention_in_days = 14
