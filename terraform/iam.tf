@@ -84,16 +84,6 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy_attachment" "custom_attachments" {
-  for_each = {
-    dynamodb       = aws_iam_policy.dynamodb_access.arn
-    ssm_parameters = aws_iam_policy.ssm_parameter_access.arn
-  }
-
-  role       = aws_iam_role.ingest_lambda_exec.name
-  policy_arn = each.value
-}
-
 resource "aws_iam_policy" "ingest_sqs_send" {
   name        = "inbox-janitor-ingest-sqs-send"
   description = "Allows ingest lambda to push message records to enforce FIFO queue"
