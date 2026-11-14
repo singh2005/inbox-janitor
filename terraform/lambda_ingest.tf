@@ -40,17 +40,14 @@ resource "aws_lambda_function" "ingest_engine" {
 
   environment {
     variables = {
-      GCP_PUBSUB_TOPIC         = google_pubsub_topic.gmail_push_topic.id
-      MULTITENANT_RULES_TABLE  = aws_dynamodb_table.multitenant_rules.name
-      ENFORCE_QUEUE_URL_CANARY = aws_sqs_queue.enforce_canary_queue.url
-      ENFORCE_QUEUE_URL_PROD   = aws_sqs_queue.enforce_prod_queue.url
+      GCP_PUBSUB_TOPIC        = google_pubsub_topic.gmail_push_topic.id
+      MULTITENANT_RULES_TABLE = aws_dynamodb_table.multitenant_rules.name
     }
   }
 
   depends_on = [
     aws_iam_role_policy_attachment.custom_attachments,
     aws_iam_role_policy_attachment.lambda_logs,
-    aws_iam_role_policy_attachment.ingest_sqs_attach,
     aws_lambda_layer_version.google_api_layer
   ]
 }
