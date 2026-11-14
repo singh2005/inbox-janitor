@@ -1,8 +1,10 @@
 resource "aws_dynamodb_table" "multitenant_rules" {
-  name         = "inbox-janitor-multitenant-rules-tf"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "PK"
-  range_key    = "SK"
+  name             = "inbox-janitor-multitenant-rules-tf"
+  billing_mode     = "PAY_PER_REQUEST"
+  hash_key         = "PK"
+  range_key        = "SK"
+  stream_enabled   = true
+  stream_view_type = "NEW_IMAGE"
 
   attribute {
     name = "PK"
