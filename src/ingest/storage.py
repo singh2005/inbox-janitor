@@ -90,7 +90,7 @@ def process_single_message(service, tenant_email: str, msg_id: str):
                 "SK": f"LOG#{sort_key}",
                 "status": status,
                 "size_bytes": size_bytes,
-                "in_inbox": has_inbox
+                "in_inbox": has_inbox,
                 "ttl_timestamp": ttl_timestamp,
             }
         )
