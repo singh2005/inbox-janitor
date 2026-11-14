@@ -1,6 +1,6 @@
 # Inbox Janitor
 
-An event-driven, cloud-native inbox management engine that automatically identifies, logs, and cleans up persistent clutter in your Gmail inbox — operating in real-time with zero manual rule maintenance.
+An event-driven, multi-tenant inbox management engine that automatically identifies, logs, and cleans up persistent clutter in Gmail — operating in real time with zero manual rule maintenance.
 
 ---
 
@@ -17,72 +17,79 @@ An event-driven, cloud-native inbox management engine that automatically identif
 
 ## What Inbox Janitor Offers
 
-Inbox Janitor turns your Gmail inbox into a self-cleaning clutter-free environment. Instead of forcing you to build and update static email filters, it acts as an intelligent supervisor that monitors sender habits, calculates engagement streaks, and enforces automated cleanup policies dynamically.
+Inbox Janitor turns Gmail into a self-cleaning, clutter-free environment. Instead of forcing you to write and maintain brittle email filters, it acts as an event-driven supervisor that tracks sender engagement across a rolling window, evaluates policies asynchronously via Change Data Capture (CDC), and enforces cleanup dynamically.
 
 ### Key Capabilities
 
-* **Automated Unread Streak Detection:** Evaluates a rolling window of recent emails per sender (e.g., 6 consecutive messages). If a sender continuously sends marketing emails or newsletters that you never read, their status escalates automatically.
-* **Strict INBOX Scope Filtering:** Processes only incoming messages landing in your primary `INBOX`, ignoring promotional tab updates, sent messages, and archived noise.
-* **Autonomous Trash Enforcement:** When a sender triggers a persistent unread streak, their incoming messages bypass your main view and route straight to Gmail Trash via targeted SQS FIFO enforcement workers.
-* **Human-in-the-Loop Safety:** Adjusts naturally to your behavior. Gmail automatically retains trashed messages for 30 days. The moment you open or retrieve an email from Trash, the system recalculates the sender's engagement streak and restores their policy to `ALLOW`.
-* **Zero-Polling, Real-Time Architecture:** Reacts instantly as email events occur via GCP Pub/Sub push notifications rather than relying on slow, scheduled cron polling.
+* **Automated Unread Streak Detection:** Evaluates a rolling window of the 6 most recent messages per sender. Once a sender reaches 6 consecutive `UNREAD` messages (`6/6 UNREAD`), their active policy automatically escalates from `ALLOW` to `DELETE`.
+* **Strict `INBOX` & `TRASH` Domain Boundary:** Syncs state only for messages residing in `INBOX` or `TRASH` (ignoring Spam, Sent, and custom archive folders) to track arrivals, read/unread state changes, and user rescues accurately.
+* **Autonomous Trash Enforcement:** Newly arriving messages (`INSERT` events) from senders with an active `DELETE` policy are dispatched to tenant-routed SQS FIFO queues (`CANARY` / `PROD`) and moved to Gmail Trash.
+* **Human-in-the-Loop Safety (Zero Tug-of-War):** Rescuing an email from Trash (`Move to Inbox`) or opening it updates the message state (`MODIFY` event) without re-triggering enforcement. Reading a single message drops the rolling streak below `6/6` and immediately resets the sender's policy back to `ALLOW`.
+* **Zero-Polling, Real-Time Architecture:** Reacts within seconds to mailbox changes via Gmail `users.watch()` and Google Cloud Pub/Sub OIDC-authenticated push webhooks.
+
 ---
 
-## The Event-Driven Architecture
+## Event-Driven CDC Architecture
 
-Inbox Janitor operates on an immediate, decoupled feedback loop between Google Gmail, GCP Pub/Sub, AWS Serverless infrastructure, and your daily email habits.
+Inbox Janitor decouples **ingestion**, **policy evaluation**, and **enforcement** using DynamoDB Streams and SQS FIFO queues so each stage scales, retries, and fails independently under strict least-privilege IAM boundaries:
 
 ```text
-                                  [ User Receives / Reads Email ]
-                                                 │
-                                                 ▼
-                                          ( Google Gmail )
-                                                 │
-                                                 │ Real-Time Push Event
-                                                 ▼
-                                     [ GCP Pub/Sub Subscription ]
-                                     (Signed Google OIDC Bearer Token)
-                                                 │
-                                                 │ Authenticated POST /gmail-event
-                                                 ▼
-                                  [ AWS API Gateway V2 (HTTP) ]
-                                  (JWT Authorizer + Rate Limits)
-                                                 │
-                                                 ▼
-                                   [ Ingress SQS FIFO Queue ]
-                                 (Partial Batch Item Failures)
-                                                 │
-                                                 ▼
-                                       [ Router Lambda Engine ]
-                                  (Multi-Tenant Routing Cache)
-                                                 │
-                                 ┌───────────────┴───────────────┐
-                                 ▼                               ▼
-                      [ Ingest Lambda: CANARY ]       [ Ingest Lambda: PROD ]
-                      (label:INBOX Filtering)         (label:INBOX Filtering)
-                                 │                               │
-                      ┌──────────┴──────────┐         ┌──────────┴──────────┐
-                      ▼                     ▼         ▼                     ▼
-                [ DynamoDB ]          [ SQS FIFO ]  [ DynamoDB ]          [ SQS FIFO ]
-            (LOG# & SENDER Policy)  (Canary Enforce)(LOG# & SENDER Policy)  (Prod Enforce)
-                                            │                               │
-                                            ▼                               ▼
-                                   [ Enforce Lambda ]              [ Enforce Lambda ]
-                                   (Gmail API Trash)               (Gmail API Trash)
+                        [ User Receives / Reads / Rescues Email ]
+                                            │
+                                            ▼
+                                    ( Google Gmail )
+                                            │  Real-Time Watch Notification
+                                            ▼
+                              [ GCP Pub/Sub Push Subscription ]
+                               (Signed Google OIDC Bearer JWT)
+                                            │  POST /gmail-event
+                                            ▼
+                                [ AWS API Gateway V2 (HTTP) ]
+                               (OIDC JWT Authorizer + Throttling)
+                                            │
+                                            ▼
+                                  [ Ingress SQS FIFO Queue ]
+                               (Content-Based Deduplication + DLQ)
+                                            │
+                                            ▼
+                                  [ Router Lambda Engine ]
+                            (Multi-Tenant Canary / Prod Routing)
+                                            │
+                             ┌──────────────┴──────────────┐
+                             ▼                             ▼
+                   [ Ingest: :CANARY ]           [ Ingest: :PROD ]
+                      (Gmail History API Sync — gmail.metadata)
+                                            │
+                                            ▼
+                        [ DynamoDB: inbox-janitor-multitenant-rules ]
+                         (Single-Table Design + 45-Day TTL + Streams)
+                                            │
+                                            │  CDC Stream (SK prefix: LOG#)
+                                            ▼
+                              [ Policy Evaluator Lambda ]
+                         (Rolling 6-Msg Window & State Machine)
+                             │                             │
+                  (INSERT + DELETE)             (MODIFY / ALLOW)
+                             │                             │
+                             ▼                             ▼
+             [ Canary Enforce SQS FIFO ]        [ State Updated Only ]
+             [  Prod Enforce SQS FIFO  ]        (No Enforcement Loop)
+                             │
+                             ▼
+               [ Enforce Lambda (:CANARY / :PROD) ]
+                  (Gmail API Trash — gmail.modify)
 ```
 
 ## How You Control Rules Just By Using Your Inbox
 
-You never need to log into AWS, edit a database, or manage routing rules manually. Your day-to-day interactions with your inbox serve as the single source of truth:
+No web console, database edits, or manual filter rules are required — normal inbox behavior drives the state machine:
 * **Automatic Escalation (ALLOW → DELETE):** A newsletter sends 6 emails in a row that sit unread. The system flags the sender with a 6/6 unread streak and automatically sets their active policy to DELETE.
 * **Instant Reversion (DELETE → ALLOW):** If a message from that sender is moved to Trash but turns out to be important, simply open and read the email in your Trash folder.
 * **Real-Time Policy Reset:** The read status change fires a real-time push event via GCP Pub/Sub directly to the AWS ingest engine. The system recalculates the rolling window (e.g., dropping the streak to 5/6), instantly updates the sender's active policy back to ALLOW, and ensures future emails land safely in your primary inbox.
 ---
 ## Cloud-Native Infrastructure & One-Click Deployment
 Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into AWS cloud environment.
-* **Dual-Cloud Architecture (AWS + GCP):** Harnesses Google Cloud Pub/Sub for native Gmail event streaming and AWS Serverless (API Gateway, SQS FIFO, Lambda, DynamoDB, Secrets Manager) for asynchronous processing, retry handling, and policy evaluation.
-* **Canary Release Strategy** Built-in tenant routing allows safe validation of upcoming ingest features via a targeted :CANARY Lambda alias while general traffic remains on :PROD.
-* **Fault-Tolerant Queueing:** Decouples ingestion from enforcement using SQS FIFO queues with partial batch failure reporting (ReportBatchItemFailures) and Dead-Letter Queues (DLQ) to ensure zero message loss during transient API errors or rate-limit blips.
-* **100% Infrastructure as Code (Terraform):** Everything—IAM roles, environment variables, DynamoDB tables, SQS queues, Lambda functions, and API bindings—is codified in Terraform.
-* **Zero Server Overhead:** Uses fully managed serverless components that scale down to zero when idle, fitting entirely within AWS and GCP Free Tier limits for standard personal use.
-* **Turnkey Setup:** Anyone can clone the repository, supply their OAuth credentials, and run terraform apply to spin up a fully functioning, personal inbox cleanup engine in minutes.
+* **Cross-Cloud Zero-Trust Ingress::** GCP Pub/Sub authenticates webhook deliveries using short-lived Google OIDC JWTs validated natively by an AWS API Gateway V2 JWT Authorizer (`accounts.google.com` issuer + exact audience binding) before messages enter SQS.
+* **Change Data Capture (CDC) & Loop Prevention** DynamoDB Streams filter strictly on SK prefix LOG#, isolating policy evaluation from SENDER#, SYSTEM_STATE, and METRICS writes and eliminating recursive stream loops.
+* **Fault Tolerance & Observability:** Every asynchronous boundary uses SQS FIFO queues with ReportBatchItemFailures and Dead-Letter Queues (DLQs), paired with a unified CloudWatch dashboard tracking end-to-end funnel throughput, stream IteratorAge, and Logs Insights error streams.
+* **100% Infrastructure as Code (Terraform):** All AWS and GCP resources—API Gateway, JWT Authorizer, Pub/Sub topic/subscription, IAM policies, DynamoDB tables/streams, SQS FIFO queues, Lambda aliases, and CloudWatch dashboards—are provisioned declaratively via Terraform.
