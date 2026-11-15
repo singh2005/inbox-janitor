@@ -1,6 +1,6 @@
 # Inbox Janitor
 
-An event-driven, multi-tenant inbox management engine that automatically identifies, logs, and cleans up persistent clutter in Gmail — operating in real time with zero manual rule maintenance.
+An event-driven, silent inbox management engine that automatically identifies and cleans up persistent clutter in Gmail — operating in real time with zero manual rule maintenance.
 
 ---
 
@@ -23,7 +23,7 @@ Inbox Janitor turns Gmail into a self-cleaning, clutter-free environment. Instea
 
 * **Automated Unread Streak Detection:** Evaluates a rolling window of the 6 most recent messages per sender. Once a sender reaches 6 consecutive `UNREAD` messages (`6/6 UNREAD`), their active policy automatically escalates from `ALLOW` to `DELETE`.
 * **Strict `INBOX` & `TRASH` Domain Boundary:** Syncs state only for messages residing in `INBOX` or `TRASH` (ignoring Spam, Sent, and custom archive folders) to track arrivals, read/unread state changes, and user rescues accurately.
-* **Autonomous Trash Enforcement:** Newly arriving messages (`INSERT` events) from senders with an active `DELETE` policy are dispatched to tenant-routed SQS FIFO queues (`CANARY` / `PROD`) and moved to Gmail Trash.
+* **Autonomous Trash Enforcement:** Newly arriving messages (`INSERT` events) from senders with an active `DELETE` policy are dispatched to tenant-routed SQS FIFO queues (`CANARY` / `PROD`) and automatically moved to Gmail Trash.
 * **Human-in-the-Loop Safety (Zero Tug-of-War):** Rescuing an email from Trash (`Move to Inbox`) or opening it updates the message state (`MODIFY` event) without re-triggering enforcement. Reading a single message drops the rolling streak below `6/6` and immediately resets the sender's policy back to `ALLOW`.
 * **Zero-Polling, Real-Time Architecture:** Reacts within seconds to mailbox changes via Gmail `users.watch()` and Google Cloud Pub/Sub OIDC-authenticated push webhooks.
 
