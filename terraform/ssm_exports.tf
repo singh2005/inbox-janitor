@@ -19,9 +19,9 @@ resource "aws_ssm_parameter" "multitenant_rules_table_name" {
   value       = aws_dynamodb_table.multitenant_rules.name
 }
 
-resource "aws_ssm_parameter" "gcp_pubsub_topic_name" {
+resource "aws_ssm_parameter" "gcp_pubsub_topic_id" {
   name        = "/inbox-janitor/infra/gcp-pubsub-topic"
-  description = "GCP pub/sub topic name"
+  description = "Full GCP Pub/Sub topic resource ID for Gmail users.watch()"
   type        = "String"
-  value       = google_pubsub_topic.gmail_push_topic.name
+  value       = google_pubsub_topic.gmail_push_topic.id
 }
