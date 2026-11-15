@@ -18,3 +18,10 @@ resource "aws_ssm_parameter" "multitenant_rules_table_name" {
   type        = "String"
   value       = aws_dynamodb_table.multitenant_rules.name
 }
+
+resource "aws_ssm_parameter" "gcp_pubsub_topic_name" {
+  name        = "/inbox-janitor/infra/gcp-pubsub-topic"
+  description = "GCP pub/sub topic name"
+  type        = "String"
+  value       = google_pubsub_topic.gmail_push_topic.name
+}
