@@ -32,7 +32,7 @@ resource "aws_lambda_function" "ingest_engine" {
   filename         = data.archive_file.ingest_lambda_zip.output_path
   source_code_hash = data.archive_file.ingest_lambda_zip.output_base64sha256
 
-  publish = false
+  publish = true
 
   layers = [
     aws_lambda_layer_version.google_api_layer.arn
