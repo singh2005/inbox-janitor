@@ -93,3 +93,13 @@ Designed from the ground up to be lightweight, secure, resilient, and effortless
 * **Change Data Capture (CDC) & Loop Prevention** DynamoDB Streams filter strictly on SK prefix LOG#, isolating policy evaluation from SENDER#, SYSTEM_STATE, and METRICS writes and eliminating recursive stream loops.
 * **Fault Tolerance & Observability:** Every asynchronous boundary uses SQS FIFO queues with ReportBatchItemFailures and Dead-Letter Queues (DLQs), paired with a unified CloudWatch dashboard tracking end-to-end funnel throughput, stream IteratorAge, and Logs Insights error streams.
 * **100% Infrastructure as Code (Terraform):** All AWS and GCP resources—API Gateway, JWT Authorizer, Pub/Sub topic/subscription, IAM policies, DynamoDB tables/streams, SQS FIFO queues, Lambda aliases, and CloudWatch dashboards—are provisioned declaratively via Terraform.
+---
+## Privacy & Gmail Permissions Audit
+
+Inbox Janitor is built on a zero-body-access model. During OAuth setup, the application requests only two narrow Gmail scopes, and you can verify the exact lines of code where they are used:
+
+* **Header-Only Ingestion (`gmail.metadata`):** Used in [`src/ingest/gmail_client.py#L30`](https://github.com/singh2005/inbox-janitor/blob/main/src/ingest/gmail_client.py#L30) to read message headers (such as `From`, `Subject`, and `List-Unsubscribe`) and set up Gmail Pub/Sub push notifications. Inbox Janitor never requests `gmail.readonly` and cannot read, parse, or store email bodies or attachments.
+* **Trash Enforcement (`gmail.modify`):** Used in [`src/enforce/index.py#L33`](https://github.com/singh2005/inbox-janitor/blob/main/src/enforce/index.py#L33) strictly to move matched clutter messages to Trash (`addLabelIds: ["TRASH"]`).
+
+### Why Google Shows an "Unverified App" Warning During Early Access
+Because `gmail.metadata` and `gmail.modify` are classified by Google as restricted scopes, Google displays a standard *"Google hasn't verified this app"* screen until formal OAuth verification and security assessment are completed. During early access, click **Advanced → Go to inbox-janitor.com (unsafe)** and check **Select all** to authorize both scopes.
