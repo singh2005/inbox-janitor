@@ -89,10 +89,11 @@ No web console, database edits, or manual filter rules are required — normal i
 ---
 ## Cloud-Native Infrastructure & One-Click Deployment
 Designed from the ground up to be lightweight, secure, resilient, and effortlessly deployable into AWS cloud environment.
-* **Cross-Cloud Zero-Trust Ingress::** GCP Pub/Sub authenticates webhook deliveries using short-lived Google OIDC JWTs validated natively by an AWS API Gateway V2 JWT Authorizer (`accounts.google.com` issuer + exact audience binding) before messages enter SQS.
-* **Change Data Capture (CDC) & Loop Prevention** DynamoDB Streams filter strictly on SK prefix LOG#, isolating policy evaluation from SENDER#, SYSTEM_STATE, and METRICS writes and eliminating recursive stream loops.
+* **Cross-Cloud Zero-Trust Ingress:** GCP Pub/Sub authenticates webhook deliveries using short-lived Google OIDC JWTs validated natively by an AWS API Gateway V2 JWT Authorizer (`accounts.google.com` issuer + exact audience binding) before messages enter SQS.
+* **Change Data Capture (CDC) & Loop Prevention:** DynamoDB Streams filter strictly on SK prefix LOG#, isolating policy evaluation from SENDER#, SYSTEM_STATE, and METRICS writes and eliminating recursive stream loops.
 * **Fault Tolerance & Observability:** Every asynchronous boundary uses SQS FIFO queues with ReportBatchItemFailures and Dead-Letter Queues (DLQs), paired with a unified CloudWatch dashboard tracking end-to-end funnel throughput, stream IteratorAge, and Logs Insights error streams.
 * **100% Infrastructure as Code (Terraform):** All AWS and GCP resources—API Gateway, JWT Authorizer, Pub/Sub topic/subscription, IAM policies, DynamoDB tables/streams, SQS FIFO queues, Lambda aliases, and CloudWatch dashboards—are provisioned declaratively via Terraform.
+* **Multi-Tenant SaaS & Self-Service Onboarding:** Prefer a zero-setup managed experience over self-hosting? Users can self-onboard directly at [inbox-janitor.com](https://inbox-janitor.com) via a multi-tenant control plane featuring automated Google OAuth provisioning and subscription lifecycle management.
 ---
 ## Privacy & Gmail Permissions Audit
 
